@@ -9,6 +9,8 @@ use near_sdk::json_types::U128;
 use near_sdk::borsh::{self, BorshSerialize, BorshDeserialize};
 use near_sdk::serde::{Serialize, Deserialize};
 use near_sdk::collections::{UnorderedMap, UnorderedSet};
+use stats::UserPenalties;
+use views::GameLimitedView;
 
 mod board;
 mod callbacks;
@@ -30,11 +32,13 @@ use crate::player::*;
 use crate::stats::*;
 use crate::token_receiver::*;
 use crate::utils::*;
+use crate::views::GameResult;
 
 #[derive(BorshSerialize, BorshStorageKey)]
 pub enum StorageKey {
     WhitelistedTokens,
     Games,
+    StoredGames,
     Players,
     /* * */
     Stats,
@@ -62,8 +66,13 @@ pub struct Contract {
     max_game_duration: Duration,
     /// referrer fee percentage from service_fee_percentage in BASIS_P (see `config.rs`)
     referrer_ratio: u32,
-    /// debug
-    pub reward_computed: Balance    
+    /// system updates
+    pub last_update_timestamp: u64,
+    /// max expected turn duration in nanoseconds (max_game_duration / max possible turns num)
+    max_turn_duration: u64,
+    /// storage for printing results
+    pub max_stored_games: u8,
+    pub stored_games: UnorderedMap<GameId, GameLimitedView>
 }
 
 #[near_bindgen]
@@ -73,19 +82,28 @@ impl Contract {
         let (
             service_fee_percentage, 
             max_game_duration,
-            referrer_ratio
+            referrer_ratio,
+            max_stored_games
         ) = if let Some(config) = config {
             config.assert_valid();
             (
                 config.service_fee_percentage,
                 sec_to_nano(config.max_game_duration_sec),
-                config.referrer_ratio
+                config.referrer_ratio,
+                config.max_stored_games
             )
         } else {
+            // default config
             (
-                MIN_FEES,
-                sec_to_nano(60 * 15),
-                BASIS_P / 2
+                // 10% total fees - 9.5% to referrer, 0.5% to cheddar distribution
+                MAX_FEES,
+                // 1 hour for max_game_duration will be set
+                // also 400 sec will be max turn duration (max_game_duration / MAX_TURNS_NUM)
+                sec_to_nano(60 * 60),
+                // 95% refferer fees from 10% total fees
+                9500,
+                // 50 last games will be stored
+                50
             )
         };
         Self {
@@ -97,7 +115,10 @@ impl Contract {
             service_fee_percentage,
             max_game_duration,
             referrer_ratio,
-            reward_computed: 0
+            last_update_timestamp: 0,
+            max_turn_duration: max_game_duration / MAX_NUM_TURNS,
+            max_stored_games,
+            stored_games: UnorderedMap::new(StorageKey::StoredGames)
         }
     }
 
@@ -105,26 +126,37 @@ impl Contract {
     #[payable]
     pub fn make_available(
         &mut self,
-        game_config: GameConfigNear,
+        game_config: Option<GameConfigNear>,
     ) {
+        let cur_timestamp = env::block_timestamp();
+        // checkpoint
+        self.internal_ping_expired_players(cur_timestamp);
+
         let account_id: &AccountId = &env::predecessor_account_id();
         assert!(self.available_players.get(account_id).is_none(), "Already in the waiting list the list");
 
         let deposit: Balance = env::attached_deposit();
         assert!(deposit >= MIN_DEPOSIT_NEAR, "Deposit is too small. Attached: {}, Required: {}", deposit, MIN_DEPOSIT_NEAR);
 
+        let (opponent_id, referrer_id) = if let Some(game_config) = game_config {
+            (game_config.opponent_id, game_config.referrer_id.clone())
+        } else {
+            (None, None)
+        };
+
         self.available_players.insert(account_id,
             &GameConfig {
                 token_id: AccountId::new_unchecked("near".into()),
                 deposit,
-                opponent_id: game_config.opponent_id,
-                referrer_id: game_config.referrer_id.clone()
+                opponent_id,
+                referrer_id: referrer_id.clone(),
+                created_at: cur_timestamp
             }
         );
         
         self.internal_check_player_available(&account_id);
 
-        if let Some(referrer_id) = game_config.referrer_id {
+        if let Some(referrer_id) = referrer_id {
             self.internal_add_referrer( &account_id, &referrer_id);
         }
     }
@@ -156,9 +188,7 @@ impl Contract {
             assert_ne!(player_1_id.clone(), player_2_id.clone(), "Find a friend to play");
 
             // Get predecessor's available deposit
-            let player_1_config = self.available_players
-                .get(&player_1_id)
-                .expect("You are not in available players list!");
+            let player_1_config = self.internal_get_available_player(&player_1_id);
             let player_1_config_token = player_1_config.token_id;
             let player_1_deposit = player_1_config.deposit;
 
@@ -189,7 +219,7 @@ impl Contract {
 
             let reward = GameDeposit {
                 token_id: token_id.clone(),
-                balance
+                balance: balance.into()
             };
             log!("game reward:{} in token {:?} ", balance, token_id.clone());
             
@@ -234,6 +264,10 @@ impl Contract {
     }
 
     pub fn make_move(&mut self, game_id: &GameId, row: usize, col: usize) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
+        let cur_timestamp = env::block_timestamp();
+        //checkpoint
+        self.internal_ping_expired_games(cur_timestamp);
+
         let mut game = self.internal_get_game(game_id);
         let init_game_state = game.game_state;
 
@@ -262,7 +296,7 @@ impl Contract {
                         board::Winner::Tie => None,
                     };
                
-                    let reward = if winner_account.is_some() {
+                    let balance = if winner_account.is_some() {
                         // SOME WINNER
                         log!("\nGame over! {} won!", winner_account.unwrap());
                         self.internal_distribute_reward(game_id, winner_account)
@@ -271,8 +305,28 @@ impl Contract {
                         log!("\nGame over! Tie!");
                         self.internal_distribute_reward(game_id, None)
                     };
-                    self.reward_computed = reward;
+
+                    let game_result = match winner_account {
+                        Some(winner) => GameResult::Win(winner.clone()),
+                        None => GameResult::Tie,
+                    };
+
+                    let (player1, player2) = game.get_player_accounts();
+
+                    let game_to_store = GameLimitedView{
+                        game_result,
+                        player1,
+                        player2,
+                        reward_or_tie_refund: GameDeposit {
+                            token_id: game.reward().token_id,
+                            balance
+                        },
+                        board: game.board.tiles,
+                    };
+
+                    self.internal_store_game(game_id, game_to_store);
                     self.internal_stop_game(game_id);
+                    
                     return game.board.tiles;
                 };
             },
@@ -288,14 +342,39 @@ impl Contract {
         if game.game_state == GameState::Active {
 
             game.total_turns += 1;
-            game.last_turn_timestamp = env::block_timestamp();
-            game.current_duration += game.last_turn_timestamp - game.initiated_at;
+            // previous turn timestamp
+            let previous_turn_timestamp = game.last_turn_timestamp;
+            // this turn timestamp
+            game.last_turn_timestamp = cur_timestamp;
+            // this game duration 
+            game.current_duration = cur_timestamp - game.initiated_at;
+
+            if previous_turn_timestamp == 0 {
+                if cur_timestamp - game.initiated_at > self.max_turn_duration {
+                    log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, cur_timestamp - game.initiated_at);
+                    // looser - current player
+                    self.internal_stop_expired_game(game_id, env::predecessor_account_id());
+                    return game.board.tiles;
+                } else {
+                    self.internal_update_game(game_id, &game);
+                    return game.board.tiles;
+                }
+            }
+
+            // expired turn time scenario - too long movement from current player
+            if game.last_turn_timestamp - previous_turn_timestamp > self.max_turn_duration {
+                log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, game.last_turn_timestamp - previous_turn_timestamp);
+                // looser - current player
+                self.internal_stop_expired_game(game_id, env::predecessor_account_id());
+                return game.board.tiles;
+            };
 
             if game.current_duration <= self.max_game_duration {
                 self.internal_update_game(game_id, &game);
                 return game.board.tiles;
             } else {
                 log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.current_duration);
+                // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
                 return game.board.tiles;
             }
@@ -316,16 +395,29 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
         
         let winner = if account_id == player1{
-            player2
+            player2.clone()
         } else if account_id == player2 {
-            player1
+            player1.clone()
         } else {
             panic!("You are not in this game. GameId: {} ", game_id)
         };
 
-        self.internal_distribute_reward(game_id, Some(&winner));
+        let balance = self.internal_distribute_reward(game_id, Some(&winner));
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
+
+        let game_to_store = GameLimitedView{
+            game_result: GameResult::Win(winner),
+            player1,
+            player2,
+            reward_or_tie_refund: GameDeposit {
+                token_id: game.reward().token_id,
+                balance
+            },
+            board: game.board.tiles,
+        };
+
+        self.internal_store_game(game_id, game_to_store);
         self.internal_stop_game(game_id);
     }
 
@@ -339,7 +431,10 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
-        assert!(game.current_duration >= self.max_game_duration, "Too early to stop the game");
+        assert!(
+            game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
+            "Too early to stop the game"
+        );
 
         let (winner, looser) = if account_id == player1 {
             (player1, player2)
@@ -356,32 +451,23 @@ impl Contract {
             None, 
             None);
 
-        self.internal_distribute_reward(game_id, Some(&winner));
+        let balance = self.internal_distribute_reward(game_id, Some(&winner));
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
+
+        let game_to_store = GameLimitedView{
+            game_result: GameResult::Win(winner.clone()),
+            player1: winner,
+            player2: looser,
+            reward_or_tie_refund: GameDeposit {
+                token_id: game.reward().token_id,
+                balance
+            },
+            board: game.board.tiles,
+        };
+
+        self.internal_store_game(game_id, game_to_store);
         self.internal_stop_game(game_id);
-    }
-
-    pub (crate) fn internal_update_game(&mut self, game_id: &GameId, game: &Game) {
-        self.games.insert(game_id, &game);
-    }
-
-    /// Views ///
-
-    pub fn get_whitelisted_tokens(&self) -> Vec<(TokenContractId, MinDeposit)> {
-        self.whitelisted_tokens.to_vec()
-    }
-    pub fn get_token_min_deposit(&self, token_id: &TokenContractId) -> U128 {
-        self.whitelisted_tokens
-            .get(token_id)
-            .expect("Token isn't whitelisted")
-            .into()
-    }
-    pub fn get_available_players(&self) -> Vec<(AccountId, GameConfig)> {
-        self.available_players.to_vec()
-    }
-    pub fn get_active_games(&self) -> Vec<(GameId, Game)> {
-        self.games.to_vec()
     }
 }
 
@@ -390,6 +476,8 @@ mod tests {
     use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{testing_env, Balance};
+    use crate::views::GameView;
+
     use super::*;
 
     const ONE_CHEDDAR:Balance = ONE_NEAR;
@@ -425,6 +513,7 @@ mod tests {
                 service_fee_percentage: service_fee_percentage.unwrap(),
                 referrer_ratio: referrer_fee.unwrap_or(BASIS_P / 2),
                 max_game_duration_sec: max_game_duration_sec.unwrap(),
+                max_stored_games: 50u8
             })
         };
 
@@ -457,11 +546,10 @@ mod tests {
             .predecessor_account_id(user.clone())
             .signer_account_id(user.clone())
             .build());
-        ctr.make_available(GameConfigNear { 
-            deposit: amount, 
+        ctr.make_available(Some(GameConfigNear { 
             opponent_id, 
             referrer_id 
-        });
+        }));
     }
 
     fn make_available_ft(
@@ -534,14 +622,6 @@ mod tests {
         ctr.stop_game(&game_id)
     }
 
-    fn fast_forward(
-        ctx: &mut VMContextBuilder,
-        time: u32
-    ) {
-        let nanos = sec_to_nano(time);
-        testing_env!(ctx.block_timestamp(nanos).build());
-    }
-
     fn get_board_current_player(game: &Game) -> AccountId {
         game.current_player_account_id()
     }
@@ -575,12 +655,121 @@ mod tests {
         println!();
     }
 
+    fn game_basics() -> Result<(VMContextBuilder, Contract), std::io::Error> {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
+        assert!(ctr.get_available_players().is_empty());
+        whitelist_token(&mut ctr);
+        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
+        ]));
+
+        let gc1 = GameConfigArgs { 
+            opponent_id: Some(opponent()), 
+            referrer_id: Some(referrer()) 
+        };
+        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+        let gc2 = GameConfigArgs { 
+            opponent_id: Some(user()), 
+            referrer_id: None 
+        };
+        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
+            (user(), GameConfigView { 
+                token_id: acc_cheddar(), 
+                deposit: U128(ONE_CHEDDAR), 
+                opponent_id: Some(opponent()), 
+                referrer_id: Some(referrer()),
+                created_at: 0
+            }),
+            (opponent(), GameConfigView { 
+                token_id: acc_cheddar(), 
+                deposit: U128(ONE_CHEDDAR), 
+                opponent_id: Some(user()), 
+                referrer_id: None,
+                created_at: 0
+            }),
+        ]));
+
+        let user2 = "user2".parse().unwrap();
+        let opponent2 = "opponent2".parse().unwrap();
+
+        make_available_near(&mut ctx, &mut ctr, &user2, ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &opponent2, ONE_NEAR, None, None);
+
+        let game_id_cheddar = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        let game_id_near = start_game(&mut ctx, &mut ctr, &user2, &opponent2);
+        
+        let game_cheddar = ctr.internal_get_game(&game_id_cheddar);
+        let game_near = ctr.internal_get_game(&game_id_near);
+        // cheddar
+        let player_1_c = game_cheddar.current_player_account_id().clone();
+        let player_2_c = game_cheddar.next_player_account_id().clone();
+        // near
+        let player_1_n = game_near.current_player_account_id().clone();
+        let player_2_n = game_near.next_player_account_id().clone();
+
+        assert!(ctr.get_active_games().contains(&(game_id_cheddar, GameView::from(&game_cheddar))));
+        assert!(ctr.get_active_games().contains(&(game_id_near, GameView::from(&game_near))));
+
+        // near game
+        // 600000000000
+        // 600000000000
+
+        let mut tiles = make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 1);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 0, 0);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 1, 1);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 2);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 2);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 0);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 2, 1);
+        print_tiles(&tiles);
+
+        let player_1_stats = ctr.get_stats(&opponent2);
+        let player_2_stats = ctr.get_stats(&user2);
+        println!("{:#?}", player_1_stats);
+        println!("{:#?}", player_2_stats);
+        assert!(
+            player_1_stats.games_played == player_2_stats.games_played
+        );
+        assert!(
+            player_2_stats.victories_num == 0 && player_1_stats.victories_num == 1
+        );   
+        assert_eq!(
+            player_1_stats.total_reward.clone(), Vec::from([
+                (
+                    "near".parse().unwrap(), 
+                    (2 * ONE_NEAR - ((2 * ONE_NEAR / BASIS_P as u128 )* MIN_FEES as u128))
+                )
+            ])
+        );
+        assert!(player_2_stats.total_reward.is_empty());
+        // cheddar game
+
+        testing_env!(ctx
+            .predecessor_account_id(player_2_c)
+            .block_timestamp(ctr.max_game_duration + 1)
+            .attached_deposit(ONE_YOCTO)
+            .build()
+        );
+        ctr.stop_game(&game_id_cheddar);
+
+        Ok((ctx, ctr))
+    }
+
     #[test]
     fn test_whitelist_token() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), U128(ONE_CHEDDAR / 10))
         ]));
         assert!(ctr.get_available_players().is_empty());
     }
@@ -590,18 +779,20 @@ mod tests {
         assert!(ctr.get_available_players().is_empty());
         make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()));
         make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None);
-        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfig)>::from([
-            (user(), GameConfig { 
+        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
+            (user(), GameConfigView { 
                 token_id: near(), 
-                deposit: ONE_NEAR, 
+                deposit: U128(ONE_NEAR), 
                 opponent_id: None, 
-                referrer_id: Some(referrer()) 
+                referrer_id: Some(referrer()),
+                created_at: 0
             }),
-            (opponent(), GameConfig { 
+            (opponent(), GameConfigView { 
                 token_id: near(), 
-                deposit: ONE_NEAR, 
+                deposit: U128(ONE_NEAR), 
                 opponent_id: Some(user()), 
-                referrer_id: None 
+                referrer_id: None,
+                created_at: 0
             }),
         ]));
         make_unavailable(&mut ctx, &mut ctr, &user());
@@ -613,7 +804,7 @@ mod tests {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
         ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
@@ -628,18 +819,20 @@ mod tests {
         let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
         make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
         make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
-        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfig)>::from([
-            (user(), GameConfig { 
+        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
+            (user(), GameConfigView { 
                 token_id: acc_cheddar(), 
-                deposit: ONE_CHEDDAR, 
+                deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()) 
+                referrer_id: Some(referrer()),
+                created_at: 0
             }),
-            (opponent(), GameConfig { 
+            (opponent(), GameConfigView { 
                 token_id: acc_cheddar(), 
-                deposit: ONE_CHEDDAR, 
+                deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
-                referrer_id: None 
+                referrer_id: None,
+                created_at: 0
             }),
         ]));
         make_unavailable(&mut ctx, &mut ctr, &user());
@@ -652,7 +845,7 @@ mod tests {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
         ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
@@ -670,7 +863,7 @@ mod tests {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
         ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
@@ -685,18 +878,20 @@ mod tests {
         let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
         make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
         make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
-        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfig)>::from([
-            (user(), GameConfig { 
+        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
+            (user(), GameConfigView { 
                 token_id: acc_cheddar(), 
-                deposit: ONE_CHEDDAR, 
+                deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()) 
+                referrer_id: Some(referrer()),
+                created_at: 0 
             }),
-            (opponent(), GameConfig { 
+            (opponent(), GameConfigView { 
                 token_id: acc_cheddar(), 
-                deposit: ONE_CHEDDAR, 
+                deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
-                referrer_id: None 
+                referrer_id: None,
+                created_at: 0 
             }),
         ]));
         testing_env!(ctx
@@ -724,7 +919,7 @@ mod tests {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
         ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
@@ -752,7 +947,7 @@ mod tests {
         assert_eq!(player_2, game.players[1].account_id);
         assert_eq!(game.board.current_piece, game.players[0].piece);
 
-        assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 1);
         print_tiles(&tiles);
@@ -789,59 +984,7 @@ mod tests {
 
     #[test]
     fn test_game_basics_near() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
-        assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None);
-        
-        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
-        
-        let game = ctr.internal_get_game(&game_id);
-        let player_1 = game.current_player_account_id().clone();
-        let player_2 = game.next_player_account_id().clone();
-
-        assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
-
-        assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
-
-        let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 1);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 0);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 1);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 0);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
-        print_tiles(&tiles);
-
-        let player_1_stats = ctr.get_stats(&opponent());
-        let player_2_stats = ctr.get_stats(&user());
-        println!("{:#?}", player_1_stats);
-        println!("{:#?}", player_2_stats);
-        assert!(
-            player_1_stats.games_played == player_2_stats.games_played
-        );
-        assert!(
-            player_2_stats.victories_num == 0 && player_1_stats.victories_num == 1
-        );   
-        assert_eq!(
-            player_1_stats.total_reward.clone(), Vec::from([
-                (
-                    "near".parse().unwrap(), 
-                    (2 * ONE_NEAR - ((2 * ONE_NEAR / BASIS_P as u128 )* MIN_FEES as u128))
-                )
-            ])
-        );
-        assert!(player_2_stats.total_reward.is_empty());
+        assert!(game_basics().is_ok());
     }
 
     #[test]
@@ -849,7 +992,7 @@ mod tests {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
         ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
@@ -879,7 +1022,7 @@ mod tests {
         assert_eq!(player_2, game.players[1].account_id);
         assert_eq!(game.board.current_piece, game.players[0].piece);
 
-        assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
         print_tiles(&tiles);
@@ -912,10 +1055,10 @@ mod tests {
         assert!(
             player_1_stats.total_reward == player_2_stats.total_reward
         ); 
-        assert_eq!(
-            ctr.reward_computed,
-            (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) / 2 
-        )
+        // assert_eq!(
+        //     ctr.reward_computed,
+        //     (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) / 2 
+        // )
     }
     #[test]
     #[should_panic(expected="Too early to stop the game")]
@@ -923,7 +1066,7 @@ mod tests {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), U128(ONE_CHEDDAR / 10))
         ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
@@ -953,7 +1096,7 @@ mod tests {
         assert_eq!(player_2, game.players[1].account_id);
         assert_eq!(game.board.current_piece, game.players[0].piece);
 
-        assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
         print_tiles(&tiles);
@@ -981,7 +1124,7 @@ mod tests {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
         ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
@@ -1011,7 +1154,7 @@ mod tests {
         assert_eq!(player_2, game.players[1].account_id);
         assert_eq!(game.board.current_piece, game.players[0].piece);
 
-        assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
         print_tiles(&tiles);
@@ -1033,153 +1176,264 @@ mod tests {
         stop_game(&mut ctx, &mut ctr, &player_1, &game_id, 601);
     }
 
+    // #[test]
+    // fn test_expired_game() {
+    //     let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
+    //     whitelist_token(&mut ctr);
+    //     assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
+    //         (acc_cheddar(), (ONE_CHEDDAR / 10).into())
+    //     ]));
+    //     assert!(ctr.get_available_players().is_empty());
+    //     let gc1 = GameConfigArgs { 
+    //         opponent_id: Some(opponent()), 
+    //         referrer_id: None 
+    //     };
+    //     let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+    //     let gc2 = GameConfigArgs { 
+    //         opponent_id: Some(user()), 
+    //         referrer_id: None 
+    //     };
+    //     let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+    //     make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+    //     make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+    //     let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+    //     let game = ctr.internal_get_game(&game_id);
+    //     let player_1 = game.current_player_account_id().clone();
+    //     let player_2 = game.next_player_account_id().clone();
+
+    //     println!("( {} , {} )", player_1, player_2);
+
+    //     assert_ne!(player_1, game.next_player_account_id());
+    //     assert_ne!(game.players[0].piece, game.players[1].piece);
+    //     assert_eq!(player_1, game.players[0].account_id);
+    //     assert_eq!(player_2, game.players[1].account_id);
+    //     assert_eq!(game.board.current_piece, game.players[0].piece);
+
+    //     assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
+
+    //     let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 0);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
+    //     print_tiles(&tiles);
+    //     testing_env!(ctx
+    //         .predecessor_account_id(player_2.clone())
+    //         .block_timestamp(sec_to_nano(601))
+    //         .build()
+    //     );
+    //     // player2 turn too slow
+    //     ctr.make_move(&game_id, 1, 2);
+    //     assert!(ctr.get_stats(&player_1).victories_num == 1);
+    //     assert!(ctr.get_stats(&player_2).victories_num == 0);
+    //     assert_eq!(
+    //         ctr.get_stats(&player_1).total_reward,
+    //         Vec::from([
+    //             (
+    //                 acc_cheddar(),
+    //                 (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
+    //             )
+    //         ])
+    //     )
+    // }
+
+    // #[test]
+    // fn test_stop_game() {
+    //     let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  None);
+    //     whitelist_token(&mut ctr);
+    //     assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
+    //         (acc_cheddar(), (ONE_CHEDDAR / 10).into())
+    //     ]));
+    //     assert!(ctr.get_available_players().is_empty());
+    //     let gc1 = GameConfigArgs { 
+    //         opponent_id: Some(opponent()), 
+    //         referrer_id: None 
+    //     };
+    //     let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+    //     let gc2 = GameConfigArgs { 
+    //         opponent_id: Some(user()), 
+    //         referrer_id: None 
+    //     };
+    //     let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+    //     make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+    //     make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+    //     let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+    //     let game = ctr.internal_get_game(&game_id);
+    //     let player_1 = game.current_player_account_id().clone();
+    //     let player_2 = game.next_player_account_id().clone();
+
+    //     println!("( {} , {} )", player_1, player_2);
+
+    //     assert_ne!(player_1, game.next_player_account_id());
+    //     assert_ne!(game.players[0].piece, game.players[1].piece);
+    //     assert_eq!(player_1, game.players[0].account_id);
+    //     assert_eq!(player_2, game.players[1].account_id);
+    //     assert_eq!(game.board.current_piece, game.players[0].piece);
+
+    //     assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
+
+    //     let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 0);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
+    //     print_tiles(&tiles);
+    //     tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
+    //     print_tiles(&tiles);
+        
+    //     stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 601);
+        
+    //     let player_1_stats = ctr.get_stats(&opponent());
+    //     let player_2_stats = ctr.get_stats(&user());
+
+    //     assert!(
+    //         player_1_stats.games_played == player_2_stats.games_played
+    //     );
+    //     assert!(
+    //         player_2_stats.victories_num == 1 && player_1_stats.victories_num == 0
+    //     );
+    //     assert!(
+    //         !player_2_stats.total_reward.is_empty() && player_1_stats.total_reward.is_empty()
+    //     ); 
+    //     assert_eq!(
+    //         player_2_stats.total_reward,
+    //         Vec::from([
+    //             (
+    //                 acc_cheddar(),
+    //                 (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
+    //             )
+    //         ])
+    //     )
+    // }
+
     #[test]
-    fn test_expired_game() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
-        ]));
-        assert!(ctr.get_available_players().is_empty());
-        let gc1 = GameConfigArgs { 
-            opponent_id: Some(opponent()), 
-            referrer_id: None 
-        };
-        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
-        
-        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
-        
-        let game = ctr.internal_get_game(&game_id);
-        let player_1 = game.current_player_account_id().clone();
-        let player_2 = game.next_player_account_id().clone();
+    fn test_new_views() -> Result<(), std::io::Error>{
+        let (mut ctx, mut ctr) = game_basics()?;
 
-        println!("( {} , {} )", player_1, player_2);
+        println!("ContractParams: {:#?}", ctr.get_contract_params());
+        println!("TotalStatsNum: {:#?}", ctr.get_total_stats_num());
+        println!("AccountsPlayed: {:#?}", ctr.get_accounts_played());
+        println!("UserPenalties: {:#?}", ctr.get_user_penalties(&user()));
 
-        assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        println!("PenaltyUsers: {:#?}", ctr.get_penalty_users());
 
-        assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None);
 
-        let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 0);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
-        print_tiles(&tiles);
+        assert_eq!(ctr.get_available_players().len(), 3);
+
         testing_env!(ctx
-            .predecessor_account_id(player_2.clone())
-            .block_timestamp(sec_to_nano(601))
+            .block_timestamp(ctr.max_game_duration + MAX_TIME_TO_BE_AVAILABLE)
             .build()
         );
-        // player2 turn too slow
-        ctr.make_move(&game_id, 1, 2);
-        assert!(ctr.get_stats(&player_1).victories_num == 1);
-        assert!(ctr.get_stats(&player_2).victories_num == 0);
-        assert_eq!(
-            ctr.get_stats(&player_1).total_reward,
-            Vec::from([
-                (
-                    acc_cheddar(),
-                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
-                )
-            ])
-        )
-    }
+        assert_eq!(ctr.get_available_players().len(), 3);
 
-    #[test]
-    fn test_stop_game() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), ONE_CHEDDAR / 10)
-        ]));
-        assert!(ctr.get_available_players().is_empty());
-        let gc1 = GameConfigArgs { 
-            opponent_id: Some(opponent()), 
-            referrer_id: None 
-        };
-        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
-        
-        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
-        
-        let game = ctr.internal_get_game(&game_id);
-        let player_1 = game.current_player_account_id().clone();
-        let player_2 = game.next_player_account_id().clone();
-
-        println!("( {} , {} )", player_1, player_2);
-
-        assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
-
-        assert!(ctr.get_active_games().contains(&(game_id, game.clone())));
-
-        let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 0);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
-        print_tiles(&tiles);
-        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
-        print_tiles(&tiles);
-        
-        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 601);
-        
-        let player_1_stats = ctr.get_stats(&opponent());
-        let player_2_stats = ctr.get_stats(&user());
-
-        assert!(
-            player_1_stats.games_played == player_2_stats.games_played
+        // test ping expired players
+        testing_env!(ctx
+            .block_timestamp(ctr.max_game_duration + MAX_TIME_TO_BE_AVAILABLE + 2)
+            .build()
         );
-        assert!(
-            player_2_stats.victories_num == 1 && player_1_stats.victories_num == 0
+        make_available_near(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR, None, None);
+
+        assert_eq!(ctr.get_available_players().len(), 1);
+        assert_eq!(ctr.get_available_players()[0].0, "fourth".parse().unwrap());
+
+
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None);
+
+        // first game starts at (max_game_duration + MAX_TIME_TO_BE_AVAILABLE +2) timestamp
+        let first_game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        let mut first_game = ctr.internal_get_game(&first_game_id); 
+        let current_player_first_game = first_game.current_player_account_id();
+        let next_player_first_game = first_game.next_player_account_id();
+        
+        let future_winner_stats = ctr.get_stats(&next_player_first_game);
+        let future_looser_stats = ctr.get_stats(&current_player_first_game);
+
+        let winner_num_wins = future_winner_stats.victories_num;
+        let looser_num_penalties = future_looser_stats.penalties_num;
+        
+        // second game starts 12 minutes after first
+        testing_env!(ctx
+            .block_timestamp(ctr.max_game_duration + MAX_TIME_TO_BE_AVAILABLE + 2 + ctr.max_turn_duration * 8)
+            .build()
         );
-        assert!(
-            !player_2_stats.total_reward.is_empty() && player_1_stats.total_reward.is_empty()
-        ); 
+
+        println!("game duration max - {}", ctr.max_game_duration);
+        println!("turn duration max - {}", ctr.max_turn_duration);
+
+        let second_game_id = start_game(&mut ctx, &mut ctr, &"third".parse().unwrap(), &"fourth".parse().unwrap());
+        assert_eq!(ctr.get_active_games().len(), 2);
+
+        let mut second_game = ctr.internal_get_game(&second_game_id); 
+        let current_player_second_game = second_game.current_player_account_id();
+        let next_player_second_game = second_game.next_player_account_id();
+
+        testing_env!(ctx
+            .block_timestamp(second_game.initiated_at + ctr.max_turn_duration - 1)
+            .build()
+        );
+        make_move(&mut ctx, &mut ctr, &current_player_second_game, &second_game_id, 0, 0);
+        second_game = ctr.internal_get_game(&second_game_id); 
+
+        testing_env!(ctx
+            .block_timestamp(second_game.initiated_at + (ctr.max_turn_duration - 1) + (ctr.max_turn_duration - 1))
+            .build()
+        );
+        make_move(&mut ctx, &mut ctr, &next_player_second_game, &second_game_id, 0, 1);
+        second_game = ctr.internal_get_game(&second_game_id); 
+
         assert_eq!(
-            player_2_stats.total_reward,
-            Vec::from([
-                (
-                    acc_cheddar(),
-                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
-                )
-            ])
-        )
+            ctr.get_active_games().len(), 1, 
+            "first game need to be removed (expired) after max_game_duration passed for this"
+        );
+        assert_eq!(
+            ctr.get_active_games()[0].0, second_game_id,
+            "first game need to be removed (expired) after max_game_duration passed for this"
+        );
+
+        println!("ContractParams: {:#?}", ctr.get_contract_params());
+
+        let new_future_winner_stats = ctr.get_stats(&next_player_first_game);
+        let new_future_looser_stats = ctr.get_stats(&current_player_first_game);
+
+        let new_winner_num_wins = new_future_winner_stats.victories_num;
+        let new_looser_num_penalties = new_future_looser_stats.penalties_num;
+        
+        assert!(new_winner_num_wins - winner_num_wins == 1);
+        assert!(new_looser_num_penalties - looser_num_penalties == 1);
+
+        assert!(
+            ctr.get_penalty_users()
+                .iter()
+                .map(|(acc, pen)| acc.clone())
+                .collect::<Vec<AccountId>>()
+                .contains(&current_player_first_game)
+        );
+
+        Ok(())
     }
 }

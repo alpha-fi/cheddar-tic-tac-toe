@@ -1,0 +1,53 @@
+use crate::*;
+
+/// 2 HOURS in seconds
+const MAX_GAME_DURATION_SEC: u32 = 2 * 60 * 60;
+/// 25 MINUTES in seconds
+const MIN_GAME_DURATION_SEC: u32 = 25 * 60;
+
+/// variables can be change after by owner
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct Config {
+    /// Service fee in BASIS_P E.g 10% => 1000; 2% => 200
+    pub service_fee_percentage: u32,
+    /// Referrer ratio to fees distribution from `service_fee_percentage`
+    /// in BASIS_P. E.g if `service_fee_percentage` = 1000 (10%)
+    /// `referrer_ratio` = 5000 means that 5% from total game reward
+    /// comes to protocol and 5% to referrer
+    pub referrer_ratio: u32,
+    /// `max_game_duration_sec` in seconds (0..3600) is required 
+    pub max_game_duration_sec: u32,
+    /// max number of stored games into contract
+    pub max_stored_games: u8
+}
+
+impl Config {
+    pub fn assert_valid(&self) {
+        validate_fee(self.service_fee_percentage, self.referrer_ratio);
+        validate_game_duration(self.max_game_duration_sec);
+    }
+}
+
+pub (crate) fn validate_fee(service_fee: u32, referrer_fee: u32) {
+    assert!(
+        service_fee >= MIN_FEES && service_fee <= MAX_FEES, 
+        "fees need to be in range 0.1..10%"
+    );
+    assert!(
+        referrer_fee >= MIN_FEES && service_fee <= BASIS_P, 
+        "fees need to be in range 0.1..100% from total fees"
+    );
+}
+pub (crate) fn validate_game_duration(duration_sec: u32) {
+    assert!(
+        duration_sec >= MIN_GAME_DURATION_SEC,
+        "max game duration must be more than {}sec",
+        MIN_GAME_DURATION_SEC
+    );
+    assert!(
+        duration_sec <= MAX_GAME_DURATION_SEC,
+        "max game duration must be less than {}sec",
+        MAX_GAME_DURATION_SEC
+    )
+}

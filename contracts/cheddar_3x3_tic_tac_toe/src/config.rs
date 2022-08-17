@@ -3,8 +3,6 @@ use crate::*;
 /// 1 HOUR in seconds
 const MAX_GAME_DURATION_SEC: u32 = 60 * 60;
 const MIN_GAME_DURATION_SEC: u32 = 100;
-/// Max referrer fees - 50% equivalent in BASIS_P
-const HALF_BASIS_P: u32 = BASIS_P / 2;
 
 /// variables can be change after by owner
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -18,7 +16,9 @@ pub struct Config {
     /// comes to protocol and 5% to referrer
     pub referrer_ratio: u32,
     /// `max_game_duration_sec` in seconds (0..3600) is required 
-    pub max_game_duration_sec: u32
+    pub max_game_duration_sec: u32,
+    /// max number of stored games into contract
+    pub max_stored_games: u8
 }
 
 impl Config {
@@ -34,8 +34,8 @@ pub (crate) fn validate_fee(service_fee: u32, referrer_fee: u32) {
         "fees need to be in range 0.1..10%"
     );
     assert!(
-        referrer_fee >= MIN_FEES && service_fee <= HALF_BASIS_P, 
-        "fees need to be in range 0.1..50%"
+        referrer_fee >= MIN_FEES && service_fee <= BASIS_P, 
+        "fees need to be in range 0.1..100% from total fees"
     );
 }
 pub (crate) fn validate_game_duration(duration_sec: u32) {

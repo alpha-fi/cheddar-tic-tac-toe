@@ -22,6 +22,13 @@ pub struct Stats {
     pub total_affiliate_reward: UnorderedMap<TokenContractId, Balance>,
 }
 
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
+#[serde(crate = "near_sdk::serde")]
+pub struct UserPenalties {
+    pub penalties_num: u64,
+}
+
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 #[serde(crate = "near_sdk::serde")]
@@ -45,6 +52,19 @@ impl Contract {
             total_reward: stats.total_reward.to_vec(), 
             total_affiliate_reward: stats.total_affiliate_reward.to_vec() 
         }
+    }
+    pub fn get_user_penalties(&self, account_id: &AccountId) -> UserPenalties {
+        let stats = self.internal_get_stats(account_id);
+        UserPenalties { penalties_num: stats.penalties_num }
+    }
+    pub fn get_total_stats_num(&self) -> u32 {
+        self.stats.len() as _
+    }
+    /// return vector of accounts played game even once upon a time
+    pub fn get_accounts_played(&self) -> Vec<AccountId> {
+        self.stats
+            .keys()
+            .collect()
     }
 }
 

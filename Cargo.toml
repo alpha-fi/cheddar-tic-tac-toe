@@ -1,15 +1,8 @@
-[package]
-name = "cheddar-tic-tac-toe"
-version = "1.0.0"
-authors = ["guacharo"]
-edition = "2018"
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-near-sdk = "4.0.0"
-near-contract-standards = "4.0.0"
+[workspace]
+members = [
+    "./contracts/cheddar_3x3_tic_tac_toe",
+    "./contracts/cheddar_5x5_tic_tac_toe"
+]
 
 [profile.release]
 codegen-units = 1
@@ -18,4 +11,5 @@ opt-level = "z"
 lto = true
 debug = false
 panic = "abort"
+# Opt into extra safety checks on arithmetic operations https://stackoverflow.com/a/64136471/249801
 overflow-checks = true

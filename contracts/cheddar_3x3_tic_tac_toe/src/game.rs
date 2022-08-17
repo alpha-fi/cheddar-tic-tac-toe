@@ -15,7 +15,7 @@ pub enum GameState {
 #[serde(crate = "near_sdk::serde")]
 pub struct GameDeposit {
     pub token_id: TokenContractId,
-    pub balance: Balance,
+    pub balance: U128,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Serialize, Deserialize)]

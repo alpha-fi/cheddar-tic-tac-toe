@@ -44,7 +44,7 @@ impl FungibleTokenReceiver for Contract {
         };
 
         assert!(
-            amount.0 > min_deposit, 
+            amount.0 >= min_deposit, 
             "deposited amount must be more than {}",
             min_deposit
         );
@@ -88,7 +88,8 @@ impl Contract {
                 token_id: token_id.clone(),
                 deposit: amount,
                 opponent_id: game_config.opponent_id,
-                referrer_id
+                referrer_id,
+                created_at: env::block_timestamp()
             }
         );
         
