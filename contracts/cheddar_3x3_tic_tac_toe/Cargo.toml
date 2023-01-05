@@ -1,15 +1,15 @@
 [package]
 name = "cheddar-tic-tac-toe"
 version = "1.0.0"
-authors = ["guacharo"]
+authors = ["guacharo", "robert-zaremba"]
 edition = "2018"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-near-sdk = "4.0.0"
-near-contract-standards = "4.0.0"
+near-sdk = "4.1.0"
+near-contract-standards = "4.1.0"
 
 [profile.release]
 codegen-units = 1
