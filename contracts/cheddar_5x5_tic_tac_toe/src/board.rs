@@ -69,8 +69,8 @@ impl Board {
         else if let Some(other_piece) = self.tiles.get(&coords) {
             return Err(MoveError::TileFilled {
                 other_piece,
-                coords.y,
                 coords.x,
+                coords.y,
             });
         }
         Ok(())
@@ -79,6 +79,7 @@ impl Board {
     /// that the last move was made in.
     pub fn update_winner(&mut self, row: usize, col: usize) {
 
+        //TODO: change the implementation so the board can be any size. Especially the way we check the winner is not ideal for it.
         let tiles_row = [
             self.tiles.get(&Coords{ x: row, y: 0 }),
             self.tiles.get(&Coords{ x: row, y: 1 }),
@@ -93,7 +94,7 @@ impl Board {
             self.tiles.get(&Coords{ x: 3, y: col }),
             self.tiles.get(&Coords{ x: 4, y: col }),
         ];
-        
+
         // Diagonals (row, col)
         // 1. (0, 0), (1, 1), (2, 2), (3, 3), (4, 4)
         // 2. (0, 4), (1, 3), (2, 2), (3, 1), (4, 0)
@@ -150,6 +151,7 @@ impl Board {
             .or_else(|| check_winner(&tiles_diagonal_2));
 
         // Tie case
+        //TODO: this needs to be updated to work with the map
         self.winner = self.winner.or_else(|| {
             if self
                 .tiles
@@ -162,4 +164,31 @@ impl Board {
             }
         });
     }
+}
+//TODO: write a simple checks for functions that validates the move and check for the winner
+#[test]
+fn valid_move() {
+    // create two players
+    let piece_1 = Piece::random();
+    let piece_2 = piece_1.other();
+    let player_1 = Player::new(piece_1, account_id_1);
+    let player_2 = Player::new(piece_2, account_id_2);
+
+    // initialize the board
+    let board = Board::new(&player_1, &player_2);
+    board.check_move(0,0);
+    assert_eq!(board.tiles.get(&Coords{ x: 0, y: 0 }), piece_1.is_some());
+}
+#[test]
+#[should_panic(expected = "Provided position is invalid: row: 5 col: 5")]
+fn invalid_move() {
+    // create two players
+    let piece_1 = Piece::random();
+    let piece_2 = piece_1.other();
+    let player_1 = Player::new(piece_1, account_id_1);
+    let player_2 = Player::new(piece_2, account_id_2);
+
+    // initialize the board
+    let board = Board::new(&player_1, &player_2);
+    board.check_move(5,5);
 }
