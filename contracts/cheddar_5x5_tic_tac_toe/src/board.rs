@@ -1,4 +1,8 @@
+use std::cmp::{min, max};
+
 use crate::*;
+use near_sdk::borsh::{self, BorshSerialize, BorshDeserialize};
+use near_sdk::serde::{Serialize, Deserialize};
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Copy)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
@@ -69,15 +73,93 @@ impl Board {
         else if let Some(other_piece) = self.tiles.get(&coords) {
             return Err(MoveError::TileFilled {
                 other_piece,
-                coords.x,
-                coords.y,
+                row: coords.x,
+                col: coords.y,
             });
         }
         Ok(())
     }
+    pub fn check_winner(&self, position: Coords) -> bool {
+        let expected = Some(self.current_piece)
+        let mut c = position.clone();
+        let mut counter = 1;
+        // check rows
+        // go max 4 pos to the left and see how far we can go
+        for i in 1..=min(4, position.x) {
+            c.x = c.x - 1;
+            if self.tiles.get(&c) == expected {
+                counter++;
+            } else {
+                break;
+            }
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = position.clone();
+        for i in 1..=max(4, BOARD_SIZE - 1 - position.x) {
+            c.x = c.x + 1;
+            if self.tiles.get(&c) == expected {
+                counter++;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
+            }
+        }
+        //TODO: check vertical
+        c = position.clone();
+        counter = 1;
+
+
+
+        //TODO: check diagonal (NW - SE)
+        c = position.clone();
+        counter = 1;
+        for i in 1..=min(4, min(position.x, position.y)) {
+            c.x = c.x - 1;
+            c.y = c.y - 1;
+            if self.tiles.get(&c) == expected {
+                counter++;
+            } else {
+                break;
+            }
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = position.clone();
+        for i in 1..=max(4, BOARD_SIZE - 1 - max(position.x, position.y)) {
+            c.x = c.x + 1;
+            c.y = c.y + 1;
+            if self.tiles.get(&c) == expected {
+                counter++;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
+            }
+        }
+
+        //TODO: check diagonal (NE - SW)
+        c = position.clone();
+        counter = 1;
+        for i in 1..=min(4, min(position.x, position.y)) {
+    }
+
+
     /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
     /// that the last move was made in.
     pub fn update_winner(&mut self, row: usize, col: usize) {
+        if self.check_winner(Coords{x: col, y: row}) {
+            //TODO: update winner
+        }
+
+        //check collumns
+
+
 
         //TODO: change the implementation so the board can be any size. Especially the way we check the winner is not ideal for it.
         let tiles_row = [
