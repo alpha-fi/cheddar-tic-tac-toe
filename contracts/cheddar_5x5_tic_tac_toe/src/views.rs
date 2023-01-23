@@ -1,5 +1,6 @@
 use crate::*;
 use std::collections::HashMap;
+use near_sdk::collections::UnorderedMap;
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -29,7 +30,7 @@ pub struct GameView {
     pub game_status: GameState,
     pub current_player: Player,
     pub reward: GameDeposit,
-    pub tiles: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
+    pub tiles: UnorderedMap<Coords, Piece>,
     /* * */
     pub initiated_at_sec: u32,
     pub last_turn_timestamp_sec: u32,
@@ -43,7 +44,7 @@ pub struct GameLimitedView {
     pub player1: AccountId,
     pub player2: AccountId,
     pub reward_or_tie_refund: GameDeposit,
-    pub board: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
+    pub board: UnorderedMap<Coords, Piece>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -124,7 +125,7 @@ impl Contract {
         self.stored_games.to_vec()
     }
 
-    pub fn get_current_tiles(&self, game_id: &GameId) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE]{
+    pub fn get_current_tiles(&self, game_id: &GameId) -> UnorderedMap<Coords, Piece>{
         let game = self.internal_get_game(game_id);
         game.board.tiles
     }

@@ -263,7 +263,7 @@ impl Contract {
         }
     }
 
-    pub fn make_move(&mut self, game_id: &GameId, row: usize, col: usize) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
+    pub fn make_move(&mut self, game_id: &GameId, row: usize, col: usize) -> UnorderedMap<Coords, Piece> {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
@@ -605,7 +605,7 @@ mod tests {
         game_id: &GameId,
         row: usize,
         col: usize
-    ) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
+    ) -> UnorderedMap<Coords, Piece> {
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .build());
@@ -629,7 +629,7 @@ mod tests {
     }
 
     /// This function is used to print out the board in a human readable way
-    fn print_tiles(tiles: &[[Option<Piece>; BOARD_SIZE]; BOARD_SIZE]) {
+    fn print_tiles(tiles: &UnorderedMap<Coords, Piece>) {
         // The result of this function will be something like the following:
         //   A B C
         // 1 x ▢ ▢
