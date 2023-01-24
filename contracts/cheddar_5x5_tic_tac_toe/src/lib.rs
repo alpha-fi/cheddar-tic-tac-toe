@@ -263,7 +263,7 @@ impl Contract {
         }
     }
 
-    pub fn make_move(&mut self, game_id: &GameId, row: usize, col: usize) -> UnorderedMap<Coords, Piece> {
+    pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> UnorderedMap<Coords, Piece> {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
@@ -274,15 +274,15 @@ impl Contract {
         assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "No access");
         assert_eq!(init_game_state, GameState::Active, "Current game isn't active");
 
-        match game.board.check_move(row, col) {
+        match game.board.check_move(coords) {
             Ok(_) => {
                 // fill board tile with current player piece
-                game.board.tiles[row][col] = Some(game.current_piece);
+                game.board.tiles.insert(&coords, &game.current_piece);
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
-                game.board.update_winner(row, col);
+                game.board.update_winner(coords);
 
                 if let Some(winner) = game.board.winner {
                     // change game state to Finished
@@ -603,13 +603,13 @@ mod tests {
         ctr: &mut Contract,
         user: &AccountId,
         game_id: &GameId,
-        row: usize,
-        col: usize
+        row: u8,
+        col: u8
     ) -> UnorderedMap<Coords, Piece> {
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .build());
-        ctr.make_move(game_id, row, col)
+        ctr.make_move(game_id, Coords { x: col, y: row })
     }
 
     fn stop_game(
@@ -636,17 +636,18 @@ mod tests {
         // 2 ▢ ▢ o
         // 3 ▢ ▢ ▢
         print!("  ");
-        for j in 0..tiles[0].len() as u8 {
+        for j in 0..BOARD_SIZE {
             // `b'A'` produces the ASCII character code for the letter A (i.e. 65)
             print!(" {}", (b'A' + j) as char);
         }
         // This prints the final newline after the row of column letters
         println!();
-        for (i, row) in tiles.iter().enumerate() {
-            // We print the row number with a space in front of it
-            print!(" {}", i + 1);
-            for tile in row {
-                print!(" {}", match *tile {
+        for a in 0..BOARD_SIZE {
+            print!(" {}", a + 1);
+            for b in 0..BOARD_SIZE {
+                let mut tile = tiles.get(&Coords { x: b, y: a });
+            // `b'A'` produces the ASCII character code for the letter A (i.e. 65)
+                print!(" {}", match tile {
                     Some(Piece::X) => "x",
                     Some(Piece::O) => "o",
                     None => "\u{25A2}", // empty tile pretty print "▢"

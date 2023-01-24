@@ -1,11 +1,10 @@
-use std::cmp::{max, min};
+use std::cmp::{min, max};
 
 use crate::*;
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::UnorderedMap;
-use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::borsh::{self, BorshSerialize, BorshDeserialize};
+use near_sdk::serde::{Serialize, Deserialize};
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Copy)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Copy, PartialEq)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 #[serde(crate = "near_sdk::serde")]
 pub enum Winner {
@@ -28,7 +27,7 @@ pub enum MoveError {
     },
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Clone)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 #[serde(crate = "near_sdk::serde")]
 pub struct Coords {
@@ -36,9 +35,9 @@ pub struct Coords {
     pub y: u8,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
-#[serde(crate = "near_sdk::serde")]
+#[derive(BorshSerialize, BorshDeserialize, Clone, PartialEq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
+// #[serde(crate = "near_sdk::serde")]
 pub struct Board {
     pub(crate) tiles: UnorderedMap<Coords, Piece>,
     /// X or O: who is currently playing
@@ -57,7 +56,7 @@ impl Board {
             player_1.piece
         );
         Self {
-            tiles: UnorderedMap::new(b"m"),
+            tiles: UnorderedMap::new(1),
             current_piece: player_1.piece,
             winner: None,
         }
@@ -67,10 +66,7 @@ impl Board {
             return Err(MoveError::GameAlreadyOver);
         }
         if coords.x >= BOARD_SIZE || coords.y >= BOARD_SIZE {
-            return Err(MoveError::InvalidPosition {
-                row: coords.y,
-                col: coords.x,
-            });
+            return Err(MoveError::InvalidPosition {row:  coords.y, col: coords.x });
         }
         // Move in already filled tile
         else if let Some(other_piece) = self.tiles.get(&coords) {
@@ -86,12 +82,13 @@ impl Board {
         let expected = Some(self.current_piece);
         let mut c = position.clone();
         let mut counter = 1;
-        // check rows
+
+        // 1. Check rows
         // go max 4 pos to the left and see how far we can go
         for i in 1..=min(4, position.x) {
             c.x = c.x - 1;
             if self.tiles.get(&c) == expected {
-                counter += 1;
+                counter+=1;
             } else {
                 break;
             }
@@ -103,7 +100,7 @@ impl Board {
         for i in 1..=max(4, BOARD_SIZE - 1 - position.x) {
             c.x = c.x + 1;
             if self.tiles.get(&c) == expected {
-                counter += 1;
+                counter+=1;
             } else {
                 break;
             }
@@ -111,18 +108,47 @@ impl Board {
                 return true;
             }
         }
-        //TODO: check vertical
+        // 2.  Check collumns 
         c = position.clone();
         counter = 1;
 
-        //TODO: check diagonal (NW - SE)
+        for i in 1..=min(4, position.y) {
+            c.y = c.y - 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = position.clone();
+        for i in 1..=max(4, BOARD_SIZE - 1 - position.y) {
+            c.y = c.y + 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
+            }
+        }
+        // 3. Check diagonal (NW - SE)
+        // eg. o X o o x o
+        //     x o X o o x 
+        //     o x x X o o
+        //     o o o x X x    
+        //     o o o x x X
+        //     x x o x o x 
         c = position.clone();
         counter = 1;
         for i in 1..=min(4, min(position.x, position.y)) {
             c.x = c.x - 1;
             c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
-                counter += 1;
+                counter+=1;
             } else {
                 break;
             }
@@ -135,7 +161,7 @@ impl Board {
             c.x = c.x + 1;
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
-                counter += 1;
+                counter+=1;
             } else {
                 break;
             }
@@ -147,128 +173,132 @@ impl Board {
         //TODO: check diagonal (NE - SW)
         c = position.clone();
         counter = 1;
-        for i in 1..=min(4, min(position.x, position.y)) {}
+        for i in 1..=min(4, min(position.x, position.y)) {
+            c.x = c.x + 1;
+            c.y = c.y - 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = position.clone();
+        for i in 1..=max(4, BOARD_SIZE - 1 - max(position.x, position.y)) {
+            c.x = c.x - 1;
+            c.y = c.y + 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
+            }
+        }
+
+        // 5. Check if board is filled -> Tie
+        if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64{
+            return true; 
+        }
+        false
     }
+
 
     /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
     /// that the last move was made in.
-    pub fn update_winner(&mut self, row: usize, col: usize) {
-        if self.check_winner(Coords { x: col, y: row }) {
-            //TODO: update winner
-        }
-
-        //check collumns
-
-        //TODO: change the implementation so the board can be any size. Especially the way we check the winner is not ideal for it.
-        let tiles_row = [
-            self.tiles.get(&Coords { x: row, y: 0 }),
-            self.tiles.get(&Coords { x: row, y: 1 }),
-            self.tiles.get(&Coords { x: row, y: 2 }),
-            self.tiles.get(&Coords { x: row, y: 3 }),
-            self.tiles.get(&Coords { x: row, y: 4 }),
-        ];
-        let tiles_col = [
-            self.tiles.get(&Coords { x: 0, y: col }),
-            self.tiles.get(&Coords { x: 1, y: col }),
-            self.tiles.get(&Coords { x: 2, y: col }),
-            self.tiles.get(&Coords { x: 3, y: col }),
-            self.tiles.get(&Coords { x: 4, y: col }),
-        ];
-
-        // Diagonals (row, col)
-        // 1. (0, 0), (1, 1), (2, 2), (3, 3), (4, 4)
-        // 2. (0, 4), (1, 3), (2, 2), (3, 1), (4, 0)
-
-        // Define diagonals
-        let tiles_diagonal_1 = if row == col {
-            // Diagonal 1
-            [
-                self.tiles.get(&Coords { x: 0, y: 0 }),
-                self.tiles.get(&Coords { x: 1, y: 1 }),
-                self.tiles.get(&Coords { x: 2, y: 2 }),
-                self.tiles.get(&Coords { x: 3, y: 3 }),
-                self.tiles.get(&Coords { x: 4, y: 4 }),
-            ]
-        } else {
-            // This will never produce a winner, so it is suitable to use for the case where the
-            // last move isn't on diagonal 1 anyway.
-            [None, None, None, None, None]
-        };
-
-        // let tiles_diagonal_2 = if (rows - row - 1) == col {
-        //     // Diagonal 2
-        //     [
-        //         self.tiles.get(&Coords { x: 0, y: 4 }),
-        //         self.tiles.get(&Coords { x: 1, y: 3 }),
-        //         self.tiles.get(&Coords { x: 2, y: 2 }),
-        //         self.tiles.get(&Coords { x: 3, y: 1 }),
-        //         self.tiles.get(&Coords { x: 4, y: 0 }),
-        //     ]
-        // } else {
-        //     // Our last move isn't on diagonal 2.
-        //     [None, None, None, None, None]
-        // };
-
-        // check given tiles (row, col, diagonal)
-        fn check_winner(row: &[Option<Piece>]) -> Option<Winner> {
-            if row[0] == row[1] && row[1] == row[2] && row[2] == row[3] && row[3] == row[4] {
-                match row[0] {
-                    Some(Piece::X) => Some(Winner::X),
-                    Some(Piece::O) => Some(Winner::O),
-                    None => None,
-                }
+    pub fn update_winner(&mut self, coords: Coords) {
+        if self.check_winner(coords) {
+            if self.current_piece == Piece::X{
+                self.winner =  Some(Winner::X);
+            } else if self.current_piece == Piece::O{
+                self.winner =  Some(Winner::O);
             } else {
-                None
+                self.winner = Some(Winner::Tie);
             }
         }
-
-        // Check winner for all given diagonals and rows/columns
-        self.winner = self
-            .winner
-            .or_else(|| check_winner(&tiles_row))
-            .or_else(|| check_winner(&tiles_col))
-            .or_else(|| check_winner(&tiles_diagonal_1));       
-            // .or_else(|| check_winner(&tiles_diagonal_2));
-
-        // Tie case
-        //TODO: this needs to be updated to work with the map
-        self.winner = self.winner.or_else(|| {
-            if self
-                .tiles
-                .iter()
-                .all(|row| row.iter().all(|tile| tile.is_some()))
-            {
-                Some(Winner::Tie)
-            } else {
-                None
-            }
-        });
     }
 }
-//TODO: write a simple checks for functions that validates the move and check for the winner
-// #[test]
-// fn valid_move() {
-//     // create two players
-//     let piece_1 = Piece::random();
-//     let piece_2 = piece_1.other();
-//     let player_1 = Player::new(piece_1, account_id_1);
-//     let player_2 = Player::new(piece_2, account_id_2);
+// TODO: write a simple checks for functions that validates the move and check for the winner
+#[test]
+fn valid_move() {
+    // create two players
+    let piece_1 = Piece::X;
+    let piece_2 = Piece::O;
+    let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+    let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
 
-//     // initialize the board
-//     let board = Board::new(&player_1, &player_2);
-//     board.check_move(0,0);
-//     assert_eq!(board.tiles.get(&Coords{ x: 0, y: 0 }), piece_1.is_some());
-// }
-// #[test]
-// #[should_panic(expected = "Provided position is invalid: row: 5 col: 5")]
-// fn invalid_move() {
-//     // create two players
-//     let piece_1 = Piece::random();
-//     let piece_2 = piece_1.other();
-//     let player_1 = Player::new(piece_1, account_id_1);
-//     let player_2 = Player::new(piece_2, account_id_2);
+    // initialize the board
+    let board = Board::new(&player_1, &player_2);
 
-//     // initialize the board
-//     let board = Board::new(&player_1, &player_2);
-//     board.check_move(5,5);
-// }
+    // make move
+    board.check_move(Coords{ x: 0, y: 0 });
+    assert_eq!(board.tiles.get(&Coords{ x: 0, y: 0 }), Some(piece_1));  
+}
+#[test]
+#[should_panic(expected = "Provided position is invalid: row: 5 col: 5")]
+fn index_out_of_bound() {
+    // create two players
+    let piece_1 = Piece::X;
+    let piece_2 = Piece::O;
+    let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+    let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+    // initialize the board
+    let board = Board::new(&player_1, &player_2);
+
+    // make move
+    board.check_move(Coords{ x: 0, y: 0 });
+    assert_eq!(board.tiles.get(&Coords{ x: 0, y: 0 }), Some(piece_1)); 
+}
+#[test]
+#[should_panic(expected = "The tile row: 0 col: 0 already contained another piece: X")]
+fn alreddy_taken_field() {
+    // create two players
+    let piece_1 = Piece::random();
+    let piece_2 = piece_1.other();
+    let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+    let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+    // initialize the board
+    let board = Board::new(&player_1, &player_2);
+
+    // make move
+    board.tiles.insert(&Coords { x: 0, y: 0}, &piece_1);
+    board.check_move(Coords{ x: 0, y: 0 });
+    assert_eq!(board.tiles.get(&Coords{ x: 0, y: 0 }), Some(piece_1)); 
+}
+#[test]
+fn check_winner() {
+    // create two players
+    let piece_1 = Piece::X;
+    let piece_2 = Piece::O;
+    let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+    let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+    // initialize the board
+    let board = Board::new(&player_1, &player_2);
+
+    // prepare the board
+    // O O O O _
+    // X X X X _
+    // _ _ _ _ _
+    // _ _ _ _ _
+    // _ _ _ _ _
+    board.tiles.insert(&Coords { x: 0, y: 0}, &piece_1);
+    board.tiles.insert(&Coords { x: 1, y: 0}, &piece_1);
+    board.tiles.insert(&Coords { x: 2, y: 0}, &piece_1);
+    board.tiles.insert(&Coords { x: 3, y: 0}, &piece_1);
+    board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
+    board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
+    board.tiles.insert(&Coords { x: 2, y: 1}, &piece_2);
+    board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
+
+    board.check_winner(Coords{ x: 4, y: 0 });
+    assert_eq!(board.check_winner(Coords{ x: 4, y: 0 }), true); 
+    board.update_winner(Coords{ x: 4, y: 0 });
+    assert_eq!(board.winner, Some(Winner::X));
+}
+

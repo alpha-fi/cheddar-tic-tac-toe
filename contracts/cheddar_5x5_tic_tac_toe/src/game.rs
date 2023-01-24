@@ -18,7 +18,7 @@ pub struct GameDeposit {
     pub balance: U128,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Clone, Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, Deserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
 #[serde(crate = "near_sdk::serde")]
 pub struct Game {

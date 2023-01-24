@@ -11,9 +11,8 @@ pub struct GameConfig {
     pub(crate) created_at: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Clone)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
-#[serde(crate = "near_sdk::serde")]
 pub struct GameConfigView {
     pub(crate) token_id: TokenContractId,
     pub(crate) deposit: U128,

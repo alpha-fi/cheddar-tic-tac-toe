@@ -1,6 +1,7 @@
 use crate::*;
 use std::collections::HashMap;
 use near_sdk::collections::UnorderedMap;
+use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -9,9 +10,9 @@ pub enum GameResult {
     Tie
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
-#[serde(crate = "near_sdk::serde")]
+// #[serde(crate = "near_sdk::serde")]
 pub struct ContractParams {
     pub games: HashMap<GameId, GameView>,
     pub available_players: Vec<(AccountId, GameConfigView)>,
@@ -21,9 +22,9 @@ pub struct ContractParams {
     pub last_update_timestamp_sec: u32
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
-#[serde(crate = "near_sdk::serde")]
+#[derive(BorshSerialize, BorshDeserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
+// #[serde(crate = "near_sdk::serde")]
 pub struct GameView {
     pub player1: AccountId,
     pub player2: AccountId,
@@ -37,8 +38,7 @@ pub struct GameView {
     pub current_duration_sec: u32,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-#[serde(crate = "near_sdk::serde")]
+#[derive(BorshSerialize, BorshDeserialize)]
 pub struct GameLimitedView {
     pub game_result: GameResult,
     pub player1: AccountId,
