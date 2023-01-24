@@ -37,7 +37,7 @@ pub struct Coords {
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, PartialEq)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
-// #[serde(crate = "near_sdk::serde")]
+#[serde(crate = "near_sdk::serde")]
 pub struct Board {
     pub(crate) tiles: UnorderedMap<Coords, Piece>,
     /// X or O: who is currently playing
@@ -56,7 +56,7 @@ impl Board {
             player_1.piece
         );
         Self {
-            tiles: UnorderedMap::new(1),
+            tiles: UnorderedMap::UnorderedMap::new(b"m"),
             current_piece: player_1.piece,
             winner: None,
         }
@@ -83,7 +83,7 @@ impl Board {
         let mut c = position.clone();
         let mut counter = 1;
 
-        // 1. Check rows
+        // 1. check rows
         // go max 4 pos to the left and see how far we can go
         for i in 1..=min(4, position.x) {
             c.x = c.x - 1;
@@ -108,7 +108,7 @@ impl Board {
                 return true;
             }
         }
-        // 2.  Check collumns 
+        // 2. check collumns 
         c = position.clone();
         counter = 1;
 
@@ -135,7 +135,7 @@ impl Board {
                 return true;
             }
         }
-        // 3. Check diagonal (NW - SE)
+        // 3. check diagonal (NW - SE)
         // eg. o X o o x o
         //     x o X o o x 
         //     o x x X o o
@@ -170,7 +170,7 @@ impl Board {
             }
         }
 
-        //TODO: check diagonal (NE - SW)
+        //4. check diagonal (NE - SW)
         c = position.clone();
         counter = 1;
         for i in 1..=min(4, min(position.x, position.y)) {
@@ -221,7 +221,6 @@ impl Board {
         }
     }
 }
-// TODO: write a simple checks for functions that validates the move and check for the winner
 #[test]
 fn valid_move() {
     // create two players
