@@ -23,7 +23,7 @@ pub enum MoveError {
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
 #[serde(crate = "near_sdk::serde")]
 pub struct Board {
-    pub(crate) tiles: UnorderedMap<Coords, Piece>,
+    pub(crate) tiles: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
     // If game is active there is always current piece
     pub(crate) current_piece: Piece,
     pub(crate) winner: Option<Winner>,
@@ -45,20 +45,15 @@ impl Board {
         }
     }
     pub fn check_move(&self, row: usize, col: usize) -> Result<(), MoveError> {
-        let coords = Coords{ x: row, y: col };
         if self.winner.is_some() {
             return Err(MoveError::GameAlreadyOver);
         }
-        if row >= BOARD_SIZE || col >= BOARD_SIZE {
+        if row >= self.tiles.len() || col >= self.tiles[0].len() {
             return Err(MoveError::InvalidPosition {row, col});
         }
         // Move in already filled tile
-        else if let Some(other_piece) = self.tiles.get(&coords) {
-            return Err(MoveError::TileFilled {
-                other_piece,
-                 coords.x ,
-                  cords.y
-                });
+        else if let Some(other_piece) = self.tiles[row][col] {
+            return Err(MoveError::TileFilled {other_piece, row, col});
         }
         Ok(())
     }
@@ -66,29 +61,24 @@ impl Board {
     /// that the last move was made in.
     pub fn update_winner(&mut self, row: usize, col: usize) {
 
-        let tiles_row = [
-            self.tiles.get(&Coords{ x: row, y: 0 }),
-            self.tiles.get(&Coords{ x: row, y: 1 }),
-            self.tiles.get(&Coords{ x: row, y: 2 }),
-        ];
-        let tiles_col = [
-            self.tiles.get(&Coords{ x: 0, y: col }),
-            self.tiles.get(&Coords{ x: 1, y: col }),
-            self.tiles.get(&Coords{ x: 2, y: col }),
-        ];
+        let rows = self.tiles.len();
+        let cols = self.tiles[0].len();
+
+        let tiles_row = self.tiles[row];
+        let tiles_col = [self.tiles[0][col], self.tiles[1][col], self.tiles[2][col]];
+
+
+        assert!(rows == BOARD_SIZE && cols == BOARD_SIZE);
 
         // Diagonals
         // 1. (0, 0), (1, 1), (2, 2)
         // 2. (0, 2), (1, 1), (2, 0)
 
         // Define diagonals
-       let tiles_diagonal_1 = if row == col {
+        let tiles_diagonal_1 = if row == col {
             // Diagonal 1
-            [
-            self.tiles.get(&Coords{ x: 0, y: 0 }),
-            self.tiles.get(&Coords{ x: 1, y: 1 }),
-            self.tiles.get(&Coords{ x: 2, y: 2 }),
-            ]
+            [self.tiles[0][0], self.tiles[1][1], self.tiles[2][2]]
+        }
         else {
             // This will never produce a winner, so it is suitable to use for the case where the
             // last move isn't on diagonal 1 anyway.
@@ -97,11 +87,8 @@ impl Board {
 
         let tiles_diagonal_2 = if (rows - row - 1) == col {
             // Diagonal 2
-            [
-                self.tiles.get(&Coords{ x: 0, y: 2 }),
-                self.tiles.get(&Coords{ x: 1, y: 1 }),
-                self.tiles.get(&Coords{ x: 2, y: 0 }),
-            ]
+            [self.tiles[0][2], self.tiles[1][1], self.tiles[2][0]]
+        }
         else {
             // Our last move isn't on diagonal 2.
             [None, None, None]
