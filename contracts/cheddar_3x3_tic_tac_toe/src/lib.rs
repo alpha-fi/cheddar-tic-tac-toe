@@ -470,43 +470,29 @@ impl Contract {
         self.internal_stop_game(game_id);
     }
 
-    #[payable]
     pub fn claim_timeout_win(&mut self, game_id: &GameId) {
-        //1. Check if the game is still going
         let mut game: Game = self.internal_get_game(&game_id);
-        assert_eq!(game.game_state, GameState::Active, "The game is already over!");
-        //2. Check if opponets move 
-        let player = env::predecessor_account_id();
-        assert_ne!(env::predecessor_account_id(), game.current_player_account_id(), "can't claim timeout win if it's your turn");
-        //3. Check for timeout
-        let cur_timestamp = env::block_timestamp();
-        if cur_timestamp - game.last_turn_timestamp > utils::TIMEOUT_WIN {
-            let (player1, player2) = self.internal_get_game_players(game_id);
-            let (winner, looser) = if account_id == player1 {
-                (player1, player2)
-            } else if account_id == player2 {
-               (player2, player1)
-            } else {
-                panic!("you can claim timeout win only in your games");
-            };
-            let balance = self.internal_distribute_reward(game_id, Some(&winner));
-            game.change_state(GameState::Finished);
-            self.internal_update_game(game_id, &game);
-            let game_to_store = GameLimitedView{
-                game_result: GameResult::Win(winner.clone()),
-                player1: winner,
-                player2: looser,
-                reward_or_tie_refund: GameDeposit {
-                    token_id: game.reward().token_id,
-                    balance
-                },
-                board: game.board.tiles,
-            };
-            self.internal_store_game(game_id, game_to_store);
-            self.internal_stop_game(game_id);
-        } else {
-            panic!("Game is still active, timeout claim is not valid!");
+        let player = env::predecessor_account_id().clone();
+        if game.claim_timeout_win(player.clone()) == false {
+            log!("can't claim the win, timeout didn't pass");
+            return;
         }
+        let (winner, looser) = (player.clone(), game.get_opponent(player));
+        let balance = self.internal_distribute_reward(game_id, Some(&winner));
+        game.change_state(GameState::Finished);
+        self.internal_update_game(game_id, &game);
+        let game_to_store = GameLimitedView{
+            game_result: GameResult::Win(winner.clone()),
+            player1: winner,
+            player2: looser,
+            reward_or_tie_refund: GameDeposit {
+                token_id: game.reward().token_id,
+                balance
+            },
+            board: game.board.tiles,
+        };
+        self.internal_store_game(game_id, game_to_store);
+        self.internal_stop_game(game_id);
     }
 }
 
@@ -1538,7 +1524,6 @@ mod tests {
         )
     }
     #[test]
-    #[should_panic(expected="Game is still active, timeout claim is not valid!")]
     fn test_claim_timeout_win_when_no_timeout() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
         whitelist_token(&mut ctr);
@@ -1586,18 +1571,8 @@ mod tests {
             .block_timestamp((TIMEOUT_WIN - 1).into())
             .build()
         );
-        // player2 turn too slow
+        // player2 turn still have time left to make a move -> dont change anything just log that the claim is not valid yet 
         ctr.claim_timeout_win(&game_id);
-        assert!(ctr.get_stats(&player_1).victories_num == 1);
-        assert!(ctr.get_stats(&player_2).victories_num == 0);
-        assert_eq!(
-            ctr.get_stats(&player_1).total_reward,
-            Vec::from([
-                (
-                    acc_cheddar(),
-                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
-                )
-            ])
-        )
+        assert!(game.game_state == GameState::Active);
     }
 }
