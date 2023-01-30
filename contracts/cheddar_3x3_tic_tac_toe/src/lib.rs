@@ -476,19 +476,18 @@ impl Contract {
         let mut game: Game = self.internal_get_game(&game_id);
         assert_eq!(game.game_state, GameState::Active, "The game is already over!");
         //2. Check if opponets move 
-        let account_id = env::predecessor_account_id();
-        assert_ne!(env::predecessor_account_id(), game.current_player_account_id(), "It is your move!");
+        let player = env::predecessor_account_id();
+        assert_ne!(env::predecessor_account_id(), game.current_player_account_id(), "can't claim timeout win if it's your turn");
         //3. Check for timeout
         let cur_timestamp = env::block_timestamp();
-        let previous_turn_timestamp = game.last_turn_timestamp;
-        if cur_timestamp - previous_turn_timestamp > utils::TIMEOUT_WIN {
+        if cur_timestamp - game.last_turn_timestamp > utils::TIMEOUT_WIN {
             let (player1, player2) = self.internal_get_game_players(game_id);
             let (winner, looser) = if account_id == player1 {
                 (player1, player2)
             } else if account_id == player2 {
                (player2, player1)
             } else {
-                panic!("You are not in this game. GameId: {} ", game_id);
+                panic!("you can claim timeout win only in your games");
             };
             let balance = self.internal_distribute_reward(game_id, Some(&winner));
             game.change_state(GameState::Finished);
