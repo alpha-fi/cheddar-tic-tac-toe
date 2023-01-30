@@ -1,7 +1,7 @@
 use crate::*;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Copy)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
 #[serde(crate = "near_sdk::serde")]
 pub enum Winner {
     X,

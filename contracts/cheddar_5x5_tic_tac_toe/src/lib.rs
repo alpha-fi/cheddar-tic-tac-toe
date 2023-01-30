@@ -478,42 +478,42 @@ impl Contract {
 
     #[payable]
     pub fn claim_timeout_win(&mut self, game_id: &GameId) {
-        assert_one_yocto();
-        let caller_account_id = env::predecessor_account_id();
+        //1. Check if the game is still going
         let mut game: Game = self.internal_get_game(&game_id);
-        assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
-        
+        assert_eq!(game.game_state, GameState::Active, "The game is already over!");
+        //2. Check if opponets move 
         let account_id = env::predecessor_account_id();
-
-        let (player1, player2) = self.internal_get_game_players(game_id);
-        
-        let winner = if account_id == player1{
-            player2.clone()
-        } else if account_id == player2 {
-            player1.clone()
+        assert_ne!(env::predecessor_account_id(), game.current_player_account_id(), "It is your move!");
+        //3. Check for timeout
+        let cur_timestamp = env::block_timestamp();
+        let previous_turn_timestamp = game.last_turn_timestamp;
+        if cur_timestamp - previous_turn_timestamp > utils::TIMEOUT_WIN {
+            let (player1, player2) = self.internal_get_game_players(game_id);
+            let (winner, looser) = if account_id == player1 {
+                (player1, player2)
+            } else if account_id == player2 {
+                (player2, player1)
+            } else {
+                panic!("You are not in this game. GameId: {} ", game_id);
+            };
+            let balance = self.internal_distribute_reward(game_id, Some(&winner));
+            game.change_state(GameState::Finished);
+            self.internal_update_game(game_id, &game);
+            let game_to_store = GameLimitedView{
+                game_result: GameResult::Win(winner.clone()),
+                player1: winner,
+                player2: looser,
+                reward_or_tie_refund: GameDeposit {
+                    token_id: game.reward().token_id,
+                    balance
+                },
+                board: game.board.tiles,
+            };
+            self.internal_store_game(game_id, game_to_store);
+            self.internal_stop_game(game_id);
         } else {
-            panic!("You are not in this game. GameId: {} ", game_id)
-        };
-
-        let balance = self.internal_distribute_reward(game_id, Some(&winner));
-        game.change_state(GameState::Finished);
-        self.internal_update_game(game_id, &game);
-
-        let game_to_store = GameLimitedView{
-            game_result: GameResult::Win(winner),
-            player1,
-            player2,
-            reward_or_tie_refund: GameDeposit {
-                token_id: game.reward().token_id,
-                balance
-            },
-            board: game.board.tiles,
-        };
-
-        self.internal_store_game(game_id, game_to_store);
-        self.internal_stop_game(game_id);
-
-
+            panic!("Game is still active, timeout claim is not valid!");
+        }
     }
 }
 
