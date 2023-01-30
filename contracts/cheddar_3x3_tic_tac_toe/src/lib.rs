@@ -469,6 +469,46 @@ impl Contract {
         self.internal_store_game(game_id, game_to_store);
         self.internal_stop_game(game_id);
     }
+
+    #[payable]
+    pub fn claim_timeout_win(&mut self, game_id: &GameId) {
+        //1. Check if the game is still going
+        let mut game: Game = self.internal_get_game(&game_id);
+        assert_eq!(game.game_state, GameState::Active, "The game is already over!");
+        //2. Check if opponets move 
+        let account_id = env::predecessor_account_id();
+        assert_ne!(env::predecessor_account_id(), game.current_player_account_id(), "It is your move!");
+        //3. Check for timeout
+        let cur_timestamp = env::block_timestamp();
+        let previous_turn_timestamp = game.last_turn_timestamp;
+        if cur_timestamp - previous_turn_timestamp > utils::TIMEOUT_WIN {
+            let (player1, player2) = self.internal_get_game_players(game_id);
+            let (winner, looser) = if account_id == player1 {
+                (player1, player2)
+            } else if account_id == player2 {
+               (player2, player1)
+            } else {
+                panic!("You are not in this game. GameId: {} ", game_id);
+            };
+            let balance = self.internal_distribute_reward(game_id, Some(&winner));
+            game.change_state(GameState::Finished);
+            self.internal_update_game(game_id, &game);
+            let game_to_store = GameLimitedView{
+                game_result: GameResult::Win(winner.clone()),
+                player1: winner,
+                player2: looser,
+                reward_or_tie_refund: GameDeposit {
+                    token_id: game.reward().token_id,
+                    balance
+                },
+                board: game.board.tiles,
+            };
+            self.internal_store_game(game_id, game_to_store);
+            self.internal_stop_game(game_id);
+        } else {
+            panic!("Game is still active, timeout claim is not valid!");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1435,5 +1475,130 @@ mod tests {
         );
 
         Ok(())
+    }
+     #[test]
+    fn test_claim_timeout_win() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
+        whitelist_token(&mut ctr);
+        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
+        ]));
+        assert!(ctr.get_available_players().is_empty());
+        let gc1 = GameConfigArgs { 
+            opponent_id: Some(opponent()), 
+            referrer_id: None 
+        };
+        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+        let gc2 = GameConfigArgs { 
+            opponent_id: Some(user()), 
+            referrer_id: None 
+        };
+        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+        let game = ctr.internal_get_game(&game_id);
+        let player_1 = game.current_player_account_id().clone();
+        let player_2 = game.next_player_account_id().clone();
+
+        println!("( {} , {} )", player_1, player_2);
+
+        assert_ne!(player_1, game.next_player_account_id());
+        assert_ne!(game.players[0].piece, game.players[1].piece);
+        assert_eq!(player_1, game.players[0].account_id);
+        assert_eq!(player_2, game.players[1].account_id);
+        assert_eq!(game.board.current_piece, game.players[0].piece);
+
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
+
+        let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
+        print_tiles(&tiles);
+        testing_env!(ctx
+            .predecessor_account_id(player_1.clone())
+            .block_timestamp((TIMEOUT_WIN + 1).into())
+            .build()
+        );
+        // player2 turn too slow
+        ctr.claim_timeout_win(&game_id);
+        assert!(ctr.get_stats(&player_1).victories_num == 1);
+        assert!(ctr.get_stats(&player_2).victories_num == 0);
+        assert_eq!(
+            ctr.get_stats(&player_1).total_reward,
+            Vec::from([
+                (
+                    acc_cheddar(),
+                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
+                )
+            ])
+        )
+    }
+    #[test]
+    #[should_panic(expected="Game is still active, timeout claim is not valid!")]
+    fn test_claim_timeout_win_when_no_timeout() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(60 * 10));
+        whitelist_token(&mut ctr);
+        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
+            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
+        ]));
+        assert!(ctr.get_available_players().is_empty());
+        let gc1 = GameConfigArgs { 
+            opponent_id: Some(opponent()), 
+            referrer_id: None 
+        };
+        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+        let gc2 = GameConfigArgs { 
+            opponent_id: Some(user()), 
+            referrer_id: None 
+        };
+        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+        let game = ctr.internal_get_game(&game_id);
+        let player_1 = game.current_player_account_id().clone();
+        let player_2 = game.next_player_account_id().clone();
+
+        println!("( {} , {} )", player_1, player_2);
+
+        assert_ne!(player_1, game.next_player_account_id());
+        assert_ne!(game.players[0].piece, game.players[1].piece);
+        assert_eq!(player_1, game.players[0].account_id);
+        assert_eq!(player_2, game.players[1].account_id);
+        assert_eq!(game.board.current_piece, game.players[0].piece);
+
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
+
+        let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
+        print_tiles(&tiles);
+        tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
+        print_tiles(&tiles);
+        testing_env!(ctx
+            .predecessor_account_id(player_1.clone())
+            .block_timestamp((TIMEOUT_WIN - 1).into())
+            .build()
+        );
+        // player2 turn too slow
+        ctr.claim_timeout_win(&game_id);
+        assert!(ctr.get_stats(&player_1).victories_num == 1);
+        assert!(ctr.get_stats(&player_2).victories_num == 0);
+        assert_eq!(
+            ctr.get_stats(&player_1).total_reward,
+            Vec::from([
+                (
+                    acc_cheddar(),
+                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
+                )
+            ])
+        )
     }
 }
