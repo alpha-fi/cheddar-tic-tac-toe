@@ -477,7 +477,7 @@ impl Contract {
             log!("can't claim the win, timeout didn't pass");
             return;
         }
-        let (winner, looser) = (player.clone(), game.get_opponent(player));
+        let looser = game.get_opponent(&player);
         let balance = self.internal_distribute_reward(game_id, Some(&winner));
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
