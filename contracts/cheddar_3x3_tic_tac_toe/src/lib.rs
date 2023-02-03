@@ -473,7 +473,7 @@ impl Contract {
     pub fn claim_timeout_win(&mut self, game_id: &GameId) {
         let mut game: Game = self.internal_get_game(&game_id);
         let player = env::predecessor_account_id();
-        if game.claim_timeout_win(player.clone()) == false {
+        if game.claim_timeout_win(&player) == false {
             log!("can't claim the win, timeout didn't pass");
             return;
         }
