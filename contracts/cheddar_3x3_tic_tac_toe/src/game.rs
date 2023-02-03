@@ -146,7 +146,7 @@ impl Game {
         }
     }
 
-    pub fn claim_timeout_win(&self, player: AccountId) -> bool{
+    pub fn claim_timeout_win(&self, player: &AccountId) -> bool{
         //1. Check if the game is still going
         assert_eq!(self.game_state, GameState::Active, "The game is already over!");
         //2. Check if opponets move 
