@@ -482,8 +482,8 @@ impl Contract {
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
         let game_to_store = GameLimitedView{
-            game_result: GameResult::Win(winner.clone()),
-            player1: winner,
+            game_result: GameResult::Win(player.clone()),
+            player1: player,
             player2: looser,
             reward_or_tie_refund: GameDeposit {
                 token_id: game.reward().token_id,
