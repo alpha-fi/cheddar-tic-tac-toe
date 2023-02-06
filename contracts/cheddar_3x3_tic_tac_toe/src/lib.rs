@@ -479,8 +479,7 @@ impl Contract {
         }
         let looser = game.get_opponent(&player);
         let balance = self.internal_distribute_reward(game_id, Some(&winner));
-        game.change_state(GameState::Finished);
-        self.internal_update_game(game_id, &game);
+        self.games.remove(game_id);
         let game_to_store = GameLimitedView{
             game_result: GameResult::Win(player.clone()),
             player1: player,
@@ -492,7 +491,6 @@ impl Contract {
             board: game.board.tiles,
         };
         self.internal_store_game(game_id, game_to_store);
-        self.internal_stop_game(game_id);
     }
 }
 
