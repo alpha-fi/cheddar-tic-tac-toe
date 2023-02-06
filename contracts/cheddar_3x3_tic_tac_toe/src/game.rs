@@ -138,8 +138,8 @@ impl Game {
         self.reward.clone()
     }
 
-    pub fn get_opponent(&self, player: AccountId)->AccountId{
-        if player == self.current_player_account_id() {
+    pub fn get_opponent(&self, player: &AccountId)->AccountId{
+        if *player == self.current_player_account_id() {
             return self.next_player_account_id();
         } else {
             return self.current_player_account_id();
@@ -150,7 +150,7 @@ impl Game {
         //1. Check if the game is still going
         assert_eq!(self.game_state, GameState::Active, "The game is already over!");
         //2. Check if opponets move 
-        assert_ne!(player, self.current_player_account_id(), "you can claim timeout win only if it's not your turn");
+        assert_ne!(*player, self.current_player_account_id(), "You can claim timeout win only if it's not your turn");
         //3. Check for timeout
         let cur_timestamp = env::block_timestamp();
         if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN {

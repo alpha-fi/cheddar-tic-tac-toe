@@ -126,6 +126,13 @@ near call $TICTACTOE give_up '{"game_id": 2}' --accountId $USER_ID --depositYoct
 near call $TICTACTOE stop_game '{"game_id": 4}' --accountId $USER_ID --gas=300000000000000
 ```
 
+#### Claim timeout win
+When your opponent doesnt to respond for 5 or more minutes you are able to claim a timeout win. The win reward will be transferred to you and the game will end
+```rust
+near call $TICTACTOE claim_timeout_win '{"game_id": 4}' --accountId $USER_ID
+```
+
+
 #### more views
 ```rust
 // total players across all played games history (num)

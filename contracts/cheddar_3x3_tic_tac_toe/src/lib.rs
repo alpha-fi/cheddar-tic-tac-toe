@@ -471,14 +471,14 @@ impl Contract {
     }
 
     pub fn claim_timeout_win(&mut self, game_id: &GameId) {
-        let mut game: Game = self.internal_get_game(&game_id);
+        let game: Game = self.internal_get_game(&game_id);
         let player = env::predecessor_account_id();
         if game.claim_timeout_win(&player) == false {
             log!("can't claim the win, timeout didn't pass");
             return;
         }
         let looser = game.get_opponent(&player);
-        let balance = self.internal_distribute_reward(game_id, Some(&winner));
+        let balance = self.internal_distribute_reward(game_id, Some(&player));
         self.games.remove(game_id);
         let game_to_store = GameLimitedView{
             game_result: GameResult::Win(player.clone()),
