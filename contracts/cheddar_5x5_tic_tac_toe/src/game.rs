@@ -136,5 +136,26 @@ impl Game {
     pub fn reward(&self) -> GameDeposit {
         self.reward.clone()
     }
+
+    pub fn get_opponent(&self, player: &AccountId)->AccountId{
+        if *player == self.current_player_account_id() {
+            return self.next_player_account_id();
+        } else {
+            return self.current_player_account_id();
+        }
+    }
+
+    pub fn claim_timeout_win(&self, player: &AccountId) -> bool{
+        //1. Check if the game is still going
+        assert_eq!(self.game_state, GameState::Active, "The game is already over!");
+        //2. Check if opponets move 
+        assert_ne!(*player, self.current_player_account_id(), "Can't claim timeout win if it's your turn");
+        //3. Check for timeout
+        let cur_timestamp = env::block_timestamp();
+        if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN {
+            return false;
+        }
+        true
+    }
     
 }
