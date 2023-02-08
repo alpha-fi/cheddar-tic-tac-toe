@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, Duration, PanicOnDefault,
     Promise, PromiseOrValue, PromiseResult, assert_one_yocto
@@ -263,7 +265,7 @@ impl Contract {
         }
     }
 
-    pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> UnorderedMap<Coords, Piece> {
+    pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> HashMap<Coords, Piece> {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
@@ -277,7 +279,7 @@ impl Contract {
         match game.board.check_move(coords) {
             Ok(_) => {
                 // fill board tile with current player piece
-                game.board.tiles.insert(&coords, &game.current_piece);
+                game.board.tiles.insert(coords, game.current_piece);
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
                 // switch player

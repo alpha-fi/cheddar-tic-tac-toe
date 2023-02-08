@@ -1,13 +1,13 @@
 use crate::*;
-use std::collections::HashMap;
-use near_sdk::collections::UnorderedMap;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::collections::UnorderedMap;
+use std::collections::HashMap;
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub enum GameResult {
     Win(AccountId),
-    Tie
+    Tie,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -19,7 +19,7 @@ pub struct ContractParams {
     /* * */
     pub service_fee_percentage: u32,
     pub max_game_duration: u32,
-    pub last_update_timestamp_sec: u32
+    pub last_update_timestamp_sec: u32,
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -44,7 +44,7 @@ pub struct GameLimitedView {
     pub player1: AccountId,
     pub player2: AccountId,
     pub reward_or_tie_refund: GameDeposit,
-    pub board: UnorderedMap<Coords, Piece>,
+    pub board: HashMap<Coords, Piece>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -58,10 +58,13 @@ impl From<&Game> for RangedPlayersView {
     fn from(g: &Game) -> Self {
         let current_player = g.current_player_account_id();
         let opposit_player = g.next_player_account_id();
-        assert_ne!(current_player, opposit_player, "Error: Matched accounts for opposite players");
-        Self { 
-            player1: current_player, 
-            player2: opposit_player, 
+        assert_ne!(
+            current_player, opposit_player,
+            "Error: Matched accounts for opposite players"
+        );
+        Self {
+            player1: current_player,
+            player2: opposit_player,
         }
     }
 }
@@ -70,9 +73,9 @@ impl From<&Game> for GameView {
     fn from(g: &Game) -> Self {
         let (player1, player2) = g.get_player_accounts();
         let current_player = g.players[g.current_player_index as usize].clone();
-        Self { 
-            player1, 
-            player2, 
+        Self {
+            player1,
+            player2,
             game_status: g.game_state,
             current_player,
             reward: g.reward(),
@@ -87,18 +90,20 @@ impl From<&Game> for GameView {
 #[near_bindgen]
 impl Contract {
     pub fn get_contract_params(&self) -> ContractParams {
-        let games:HashMap<u64, GameView> = self.games.iter()
-            .map(|(game_id,game)| (game_id, GameView::from(&game)))
+        let games: HashMap<u64, GameView> = self
+            .games
+            .iter()
+            .map(|(game_id, game)| (game_id, GameView::from(&game)))
             .collect();
         let available_players = self.get_available_players();
 
-        ContractParams { 
-            games, 
-            available_players, 
-            service_fee_percentage: self.service_fee_percentage, 
+        ContractParams {
+            games,
+            available_players,
+            service_fee_percentage: self.service_fee_percentage,
             max_game_duration: nano_to_sec(self.max_game_duration),
-            last_update_timestamp_sec: nano_to_sec(self.last_update_timestamp)
-        } 
+            last_update_timestamp_sec: nano_to_sec(self.last_update_timestamp),
+        }
     }
 
     pub fn get_game(&self, game_id: &GameId) -> GameLimitedView {
@@ -106,8 +111,7 @@ impl Contract {
     }
 
     pub fn get_ordered_players(&self, game_id: &GameId) -> RangedPlayersView {
-        self
-            .games
+        self.games
             .get(game_id)
             .map(|game| RangedPlayersView::from(&game))
             .expect("Game was not found")
@@ -125,7 +129,7 @@ impl Contract {
         self.stored_games.to_vec()
     }
 
-    pub fn get_current_tiles(&self, game_id: &GameId) -> UnorderedMap<Coords, Piece>{
+    pub fn get_current_tiles(&self, game_id: &GameId) -> UnorderedMap<Coords, Piece> {
         let game = self.internal_get_game(game_id);
         game.board.tiles
     }
@@ -165,12 +169,12 @@ impl Contract {
         let accounts_played = self.get_accounts_played();
         assert_eq!(accounts_played.len() as u32, self.get_total_stats_num());
 
-        let result: Vec<(_,_)> = accounts_played.iter()
+        let result: Vec<(_, _)> = accounts_played
+            .iter()
             .map(|acc| {
-                    let penalties_by_acc = self.get_user_penalties(acc);
-                    (acc.clone(), penalties_by_acc)
-                }
-            )
+                let penalties_by_acc = self.get_user_penalties(acc);
+                (acc.clone(), penalties_by_acc)
+            })
             .filter(|(_, penalties_by_acc)| penalties_by_acc.penalties_num > 0)
             .collect();
 
