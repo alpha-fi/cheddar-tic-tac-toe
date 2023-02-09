@@ -9,7 +9,7 @@ pub enum Winner {
     Tie,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MoveError {
     /// The game was already over when a move was attempted
     GameAlreadyOver,
@@ -161,3 +161,71 @@ impl Board {
         });
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod test {
+    use crate::{Player, utils::BOARD_SIZE, board::{MoveError, Winner}, player::Piece};
+    use super::Board;
+
+    fn print_tiles(tiles: &[[Option<Piece>; BOARD_SIZE]; BOARD_SIZE]) {
+        // The result of this function will be something like the following:
+        //   A B C
+        // 1 x ▢ ▢
+        // 2 ▢ ▢ o
+        // 3 ▢ ▢ ▢
+        print!("  ");
+        for j in 0..tiles[0].len() as u8 {
+            // `b'A'` produces the ASCII character code for the letter A (i.e. 65)
+            print!(" {}", (b'A' + j) as char);
+        }
+        // This prints the final newline after the row of column letters
+        println!();
+        for (i, row) in tiles.iter().enumerate() {
+            // We print the row number with a space in front of it
+            print!(" {}", i + 1);
+            for tile in row {
+                print!(" {}", match *tile {
+                    Some(Piece::X) => "x",
+                    Some(Piece::O) => "o",
+                    None => "\u{25A2}", // empty tile pretty print "▢"
+                });
+            }
+            println!();
+        }
+        println!();
+    }
+
+    #[test]
+    fn test_check_move(){
+        let player_1 = Player::new(crate::player::Piece::O, "player1.near".parse().unwrap());
+        let player_2 = Player::new(crate::player::Piece::X, "player2.near".parse().unwrap());
+        let mut board = Board::new(&player_1, &player_2);
+        assert_eq!(board.check_move(0,0), Ok(()));
+        assert_eq!(board.check_move(BOARD_SIZE + 1, 0), Err(MoveError::InvalidPosition {row: BOARD_SIZE + 1, col: 0}));
+        board.tiles[0][0] =  Some(Piece::X);
+        assert_eq!(board.check_move(0,0), Err(MoveError::TileFilled {
+            other_piece: Piece::X,
+            row: 0,
+            col: 0,
+        }));
+        board.winner = Some(Winner::Tie);
+        assert_eq!(board.check_move(0,0), Err(MoveError::GameAlreadyOver));
+    }
+
+    #[test]
+    fn test_update_winner() {
+        let player_1 = Player::new(crate::player::Piece::O, "player1.near".parse().unwrap());
+        let player_2 = Player::new(crate::player::Piece::X, "player2.near".parse().unwrap());
+        let mut board = Board::new(&player_1, &player_2);
+        board.tiles[0][0] = Some(Piece::O);
+        board.tiles[1][0] = Some(Piece::O);
+        board.tiles[2][0] = Some(Piece::O);
+        board.tiles[3][0] = Some(Piece::O);
+        board.tiles[4][0] = Some(Piece::O);
+        assert_eq!(board.winner, None);
+        board.update_winner(4, 0);
+        print_tiles(&board.tiles);
+        assert_eq!(board.winner, Some(Winner::O));
+    }
+}
+
