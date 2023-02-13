@@ -1,3 +1,7 @@
+use std::cmp::{min, max};
+
+use near_sdk::serde;
+
 use crate::*;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Copy)]
@@ -31,12 +35,12 @@ pub struct Coords {
     pub y: u8,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
-#[serde(crate = "near_sdk::serde")]
+#[derive(BorshSerialize, BorshDeserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
+// #[serde(crate = "near_sdk::serde")]
 pub struct Board {
     // TODO: should be HashMap<Coords, Piece>
-    pub(crate) tiles: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
+    pub(crate) tiles: UnorderedMap<Coords, Piece>,
     /// X or O: who is currently playing
     pub(crate) current_piece: Piece,
     pub(crate) winner: Option<Winner>,
@@ -53,7 +57,7 @@ impl Board {
             player_1.piece
         );
         Self {
-            tiles: Default::default(),
+            tiles: UnorderedMap::new(b"m"),
             current_piece: player_1.piece,
             winner: None,
         }
@@ -62,11 +66,11 @@ impl Board {
         if self.winner.is_some() {
             return Err(MoveError::GameAlreadyOver);
         }
-        if row >= self.tiles.len() || col >= self.tiles[0].len() {
+        if row > BOARD_SIZE || col > BOARD_SIZE {
             return Err(MoveError::InvalidPosition { row, col });
         }
         // Move in already filled tile
-        else if let Some(other_piece) = self.tiles[row][col] {
+        else if let Some(other_piece) = self.tiles.get(&Coords { x: col as u8, y: row as u8 }) {
             return Err(MoveError::TileFilled {
                 other_piece,
                 row,
@@ -75,89 +79,146 @@ impl Board {
         }
         Ok(())
     }
-    /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
-    /// that the last move was made in.
-    pub fn update_winner(&mut self, row: usize, col: usize) {
-        let rows = self.tiles.len();
-        let cols = self.tiles[0].len();
+    pub fn check_winner(&self, position: Coords) -> bool {
+        let expected = Some(self.current_piece);
+        let mut c: Coords = Coords { x: position.x.clone(), y: position.y.clone() };
+        let mut counter = 1;
 
-        let tiles_row = self.tiles[row];
-        let tiles_col = [
-            self.tiles[0][col],
-            self.tiles[1][col],
-            self.tiles[2][col],
-            self.tiles[3][col],
-            self.tiles[4][col],
-        ];
-
-        assert!(rows == BOARD_SIZE && cols == BOARD_SIZE);
-
-        // Diagonals (row, col)
-        // 1. (0, 0), (1, 1), (2, 2), (3, 3), (4, 4)
-        // 2. (0, 4), (1, 3), (2, 2), (3, 1), (4, 0)
-
-        // Define diagonals
-        let tiles_diagonal_1 = if row == col {
-            // Diagonal 1
-            [
-                self.tiles[0][0],
-                self.tiles[1][1],
-                self.tiles[2][2],
-                self.tiles[3][3],
-                self.tiles[4][4],
-            ]
-        } else {
-            // This will never produce a winner, so it is suitable to use for the case where the
-            // last move isn't on diagonal 1 anyway.
-            [None, None, None, None, None]
-        };
-
-        let tiles_diagonal_2 = if (rows - row - 1) == col {
-            // Diagonal 2
-            [
-                self.tiles[0][4],
-                self.tiles[1][3],
-                self.tiles[2][2],
-                self.tiles[3][1],
-                self.tiles[4][0],
-            ]
-        } else {
-            // Our last move isn't on diagonal 2.
-            [None, None, None, None, None]
-        };
-
-        // check given tiles (row, col, diagonal)
-        fn check_winner(row: &[Option<Piece>]) -> Option<Winner> {
-            if row[0] == row[1] && row[1] == row[2] && row[2] == row[3] && row[3] == row[4] {
-                match row[0] {
-                    Some(Piece::X) => Some(Winner::X),
-                    Some(Piece::O) => Some(Winner::O),
-                    None => None,
-                }
+        // 1. check rows
+        // go max 4 pos to the left and see how far we can go
+        for i in 1..=min(4, position.x) {
+            c.x = c.x - 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
             } else {
-                None
+                break;
+            }
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        for i in 1..=max(4, BOARD_SIZE - 1 - position.x as usize) {
+            c.x = c.x + 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
+            }
+        }
+        // 2. check collumns 
+        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        counter = 1;
+
+        for i in 1..=min(4, position.y) {
+            c.y = c.y - 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        for i in 1..=max(4, BOARD_SIZE - 1 - position.y as usize) {
+            c.y = c.y + 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
+            }
+        }
+        // 3. check diagonal (NW - SE)
+        // eg. o X o o x o
+        //     x o X o o x 
+        //     o x x X o o
+        //     o o o x X x    
+        //     o o o x x X
+        //     x x o x o x 
+        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        counter = 1;
+        for i in 1..=min(4, min(position.x, position.y)) {
+            c.x = c.x - 1;
+            c.y = c.y - 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        for i in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
+            c.x = c.x + 1;
+            c.y = c.y + 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
             }
         }
 
-        // Check winner for all given diagonals and rows/columns
-        self.winner = self
-            .winner
-            .or_else(|| check_winner(&tiles_row))
-            .or_else(|| check_winner(&tiles_col))
-            .or_else(|| check_winner(&tiles_diagonal_1))
-            .or_else(|| check_winner(&tiles_diagonal_2));
-
-        // Tie case
-        self.winner = self.winner.or_else(|| {
-            if self
-                .tiles
-                .iter()
-                .all(|row| row.iter().all(|tile| tile.is_some()))
-            {
-                Some(Winner::Tie)
+        //4. check diagonal (NE - SW)
+        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        counter = 1;
+        for i in 1..=min(4, min(position.x, position.y)) {
+            c.x = c.x + 1;
+            c.y = c.y - 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
             } else {
-                None
+                break;
             }
-        });
+        }
+        if counter >= 5 {
+            return true;
+        }
+        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        for i in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
+            c.x = c.x - 1;
+            c.y = c.y + 1;
+            if self.tiles.get(&c) == expected {
+                counter+=1;
+            } else {
+                break;
+            }
+            if counter >= 5 {
+                return true;
+            }
+        }
+
+        // 5. Check if board is filled -> Tie
+        if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64{
+            return true; 
+        }
+        false
+    }
+    /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
+    /// that the last move was made in.
+    /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
+    /// that the last move was made in.
+    pub fn update_winner(&mut self, coords: Coords) {
+        if self.check_winner(coords) {
+            if self.current_piece == Piece::X{
+                self.winner =  Some(Winner::X);
+            } else if self.current_piece == Piece::O{
+                self.winner =  Some(Winner::O);
+            } else {
+                self.winner = Some(Winner::Tie);
+            }
+        }
     }
 }

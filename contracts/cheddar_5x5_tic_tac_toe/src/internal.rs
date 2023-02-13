@@ -197,44 +197,44 @@ impl Contract {
     }
 
     pub (crate) fn internal_stop_expired_game(&mut self, game_id: &GameId, looser: AccountId) {
-        let mut game: Game = self.internal_get_game(&game_id);
-        assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
+        // let mut game: Game = self.internal_get_game(&game_id);
+        // assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
         
-        self.internal_update_stats(
-            None, 
-            &looser, 
-            UpdateStatsAction::AddPenaltyGame, 
-            None, 
-            None
-        );
+        // self.internal_update_stats(
+        //     None, 
+        //     &looser, 
+        //     UpdateStatsAction::AddPenaltyGame, 
+        //     None, 
+        //     None
+        // );
         
-        let (player1, player2) = self.internal_get_game_players(game_id);
+        // let (player1, player2) = self.internal_get_game_players(game_id);
         
-        let winner = if looser == player1{
-            player2.clone()
-        } else if looser == player2 {
-            player1.clone()
-        } else {
-            panic!("Account @{} not in this game. GameId: {} ", looser, game_id)
-        };
+        // let winner = if looser == player1{
+        //     player2.clone()
+        // } else if looser == player2 {
+        //     player1.clone()
+        // } else {
+        //     panic!("Account @{} not in this game. GameId: {} ", looser, game_id)
+        // };
 
-        let balance = self.internal_distribute_reward(game_id, Some(&winner));
-        game.change_state(GameState::Finished);
-        self.internal_update_game(game_id, &game);
+        // let balance = self.internal_distribute_reward(game_id, Some(&winner));
+        // game.change_state(GameState::Finished);
+        // self.internal_update_game(game_id, &game);
 
-        let game_to_store = GameLimitedView{
-            game_result: views::GameResult::Win(winner),
-            player1,
-            player2,
-            reward_or_tie_refund: GameDeposit { 
-                token_id: game.reward().token_id, 
-                balance 
-            },
-            board: game.board.tiles
-        };
-        self.internal_store_game(game_id, game_to_store);
+        // let game_to_store = GameLimitedView{
+        //     game_result: views::GameResult::Win(winner),
+        //     player1,
+        //     player2,
+        //     reward_or_tie_refund: GameDeposit { 
+        //         token_id: game.reward().token_id, 
+        //         balance 
+        //     },
+        //     board: game.board.tiles
+        // };
+        // self.internal_store_game(game_id, game_to_store);
 
-        self.internal_stop_game(game_id);
+        // self.internal_stop_game(game_id);
     }
 
     pub(crate) fn is_account_exists(&self, account_id: &AccountId) -> bool {
