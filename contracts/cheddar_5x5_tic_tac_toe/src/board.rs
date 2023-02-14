@@ -80,7 +80,7 @@ impl Board {
         Ok(())
     }
     pub fn check_winner(&self, position: Coords) -> bool {
-        let expected = Some(self.current_piece);
+        let expected = Some(self.current_piece.other());
         let mut c: Coords = Coords { x: position.x.clone(), y: position.y.clone() };
         let mut counter = 1;
 
@@ -173,10 +173,10 @@ impl Board {
 
         //4. check diagonal (NE - SW)
         c = Coords { x: position.x.clone(), y: position.y.clone() };
-        counter = 1;
+        let mut counter = 1;
         for i in 1..=min(4, min(position.x, position.y)) {
-            c.x = c.x + 1;
-            c.y = c.y - 1;
+            c.x = c.x - 1;
+            c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
             } else {
@@ -188,8 +188,11 @@ impl Board {
         }
         c = Coords { x: position.x.clone(), y: position.y.clone() };
         for i in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
-            c.x = c.x - 1;
-            c.y = c.y + 1;
+            if c.y == 0 {
+                break;
+            }
+            c.x = c.x + 1;
+            c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
             } else {
@@ -199,7 +202,6 @@ impl Board {
                 return true;
             }
         }
-
         // 5. Check if board is filled -> Tie
         if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64{
             return true; 
@@ -211,14 +213,27 @@ impl Board {
     /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
     /// that the last move was made in.
     pub fn update_winner(&mut self, coords: Coords) {
+        print!("am i even here?");
         if self.check_winner(coords) {
             if self.current_piece == Piece::X{
                 self.winner =  Some(Winner::X);
+                print!("X is the winner");
             } else if self.current_piece == Piece::O{
                 self.winner =  Some(Winner::O);
+                print!("O is the winner");
             } else {
                 self.winner = Some(Winner::Tie);
             }
         }
+    }
+
+    pub fn get_vector(&self) -> [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] {
+        let mut local_vector: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] = Default::default();
+        for x in 0..=BOARD_SIZE - 1 {
+            for y in 0..=BOARD_SIZE - 1 {
+                local_vector[y as usize][x as usize] = self.tiles.get(&Coords { x: x as u8, y: y as u8 });
+            }
+        }
+        return local_vector;
     }
 }

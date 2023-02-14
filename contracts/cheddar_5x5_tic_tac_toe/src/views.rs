@@ -124,10 +124,10 @@ impl Contract {
         self.stored_games.to_vec()
     }
 
-    // pub fn get_current_tiles(&self, game_id: &GameId) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE]{
-    //     let game = self.internal_get_game(game_id);
-    //     game.board.tiles
-    // }
+    pub fn get_current_tiles(&self, game_id: &GameId) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE]{
+        let game = self.internal_get_game(game_id);
+        game.board.get_vector()
+    }
 
     pub fn get_whitelisted_tokens(&self) -> Vec<(TokenContractId, U128)> {
         self.whitelisted_tokens

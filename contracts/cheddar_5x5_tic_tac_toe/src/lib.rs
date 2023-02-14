@@ -277,14 +277,15 @@ impl Contract {
         match game.board.check_move(row, col) {
             Ok(_) => {
                 // fill board tile with current player piece
-                game.board.tiles[row][col] = Some(game.current_piece);
+                game.board.tiles.insert(&Coords {y: row as u8, x: col as u8}, &game.current_piece);
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
-                game.board.update_winner(row, col);
+                game.board.update_winner(Coords {y: row as u8, x: col as u8});
 
                 if let Some(winner) = game.board.winner {
+                    print!("am i the winner?");
                     // change game state to Finished
                     game.change_state(GameState::Finished);
                     self.internal_update_game(game_id, &game);
@@ -321,13 +322,13 @@ impl Contract {
                             token_id: game.reward().token_id,
                             balance
                         },
-                        board: game.board.tiles,
+                        board: game.board.get_vector(),
                     };
 
                     self.internal_store_game(game_id, game_to_store);
                     self.internal_stop_game(game_id);
                     
-                    return game.board.tiles;
+                    return game.board.get_vector();
                 };
             },
             Err(e) => match e {
@@ -354,10 +355,10 @@ impl Contract {
                     log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, cur_timestamp - game.initiated_at);
                     // looser - current player
                     self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                    return game.board.tiles;
+                    return game.board.get_vector();
                 } else {
                     self.internal_update_game(game_id, &game);
-                    return game.board.tiles;
+                    return game.board.get_vector();
                 }
             }
 
@@ -366,17 +367,17 @@ impl Contract {
                 log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, game.last_turn_timestamp - previous_turn_timestamp);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.tiles;
+                return game.board.get_vector();
             };
 
             if game.current_duration <= self.max_game_duration {
                 self.internal_update_game(game_id, &game);
-                return game.board.tiles;
+                return game.board.get_vector();
             } else {
                 log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.current_duration);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.tiles;
+                return game.board.get_vector();
             }
         } else {
             panic!("Something wrong with game id: {} state", game_id)
@@ -414,7 +415,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            board: game.board.tiles,
+            board: game.board.get_vector(),
         };
 
         self.internal_store_game(game_id, game_to_store);
@@ -469,7 +470,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            board: game.board.tiles,
+            board: game.board.get_vector(),
         };
 
         self.internal_store_game(game_id, game_to_store);
@@ -494,7 +495,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            board: game.board.tiles,
+            board: game.board.get_vector(),
         };
         self.internal_store_game(game_id, game_to_store);
     }
@@ -996,8 +997,8 @@ mod tests {
         // tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 1);
         // print_tiles(&tiles);
 
-        let player_1_stats = ctr.get_stats(&opponent());
-        let player_2_stats = ctr.get_stats(&user());
+        let player_1_stats = ctr.get_stats(&user());
+        let player_2_stats = ctr.get_stats(&&opponent());
         println!("{:#?}", player_1_stats);
         println!("{:#?}", player_2_stats);
         assert!(
