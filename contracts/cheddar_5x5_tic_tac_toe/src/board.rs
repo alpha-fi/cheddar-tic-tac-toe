@@ -287,7 +287,7 @@ mod test {
             col: 0})); 
     }
     #[test]
-    fn check_winner() {
+    fn check_row_winner() {
         // create two players
         let piece_1 = Piece::X;
         let piece_2 = Piece::O;
@@ -313,5 +313,155 @@ mod test {
         board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
         let result = board.check_winner(Coords{ x: 4, y: 1 });
         assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_column_winner_1() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // O _ _ _ _
+        // O _ _ _ _
+        // O _ _ _ _
+        // O _ _ _ _
+        // _ _ _ _ _
+        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 3}, &piece_2);
+        let result = board.check_winner(Coords{ x: 0, y: 4});
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_column_winner_2() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // _ _ _ _ _
+        // O _ _ _ _
+        // O _ _ _ _
+        // O _ _ _ _
+        // O _ _ _ _
+        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 3}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 4}, &piece_2);
+        let result = board.check_winner(Coords{ x: 0, y: 0 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_column_winner_3() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // O _ _ _ _
+        // O _ _ _ _
+        // _ _ _ _ _
+        // O _ _ _ _
+        // O _ _ _ _
+        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 3}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 4}, &piece_2);
+        let result = board.check_winner(Coords{ x: 0, y: 2 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_se_diagonal_winner() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // O _ _ _ _
+        // _ O _ _ _
+        // _ _ O _ _
+        // _ _ _ O _
+        // _ _ _ _ _
+        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 3}, &piece_2);
+        let result = board.check_winner(Coords{ x: 4, y: 4 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_sw_diagonal_winner() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // _ _ _ _ O
+        // _ _ _ O _
+        // _ _ O _ _
+        // _ O _ _ _
+        // _ _ _ _ _
+        board.tiles.insert(&Coords { x: 4, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 3}, &piece_2);
+        let result = board.check_winner(Coords{ x: 0, y: 4 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn test_get_vector() {
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // insert few testing values
+        // _ _ _ _ O
+        // _ _ _ O _
+        // _ _ O _ _
+        // _ O _ _ _
+        // _ _ _ _ _
+        board.tiles.insert(&Coords { x: 4, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 3}, &piece_2);
+        let vector = board.get_vector();
+        assert_eq!(vector.len(), BOARD_SIZE);
+        assert_eq!(vector[0].len(), BOARD_SIZE);
+        assert_eq!(vector[0][4], Some(piece_2));
+        assert_eq!(vector[1][3], Some(piece_2));
+        assert_eq!(vector[2][2], Some(piece_2));
+        assert_eq!(vector[3][1], Some(piece_2));
+        assert_eq!(vector[0][0], None);
+        assert_eq!(vector[4][4], None);
     }
 }
