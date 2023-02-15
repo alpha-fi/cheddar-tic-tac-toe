@@ -39,7 +39,6 @@ pub struct Coords {
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 // #[serde(crate = "near_sdk::serde")]
 pub struct Board {
-    // TODO: should be HashMap<Coords, Piece>
     pub(crate) tiles: UnorderedMap<Coords, Piece>,
     /// X or O: who is currently playing
     pub(crate) current_piece: Piece,
@@ -57,7 +56,7 @@ impl Board {
             player_1.piece
         );
         Self {
-            tiles: UnorderedMap::new(b"m"),
+            tiles: UnorderedMap::new(env::sha256(&player_1.account_id.as_bytes())),//account hash
             current_piece: player_1.piece,
             winner: None,
         }
@@ -86,7 +85,7 @@ impl Board {
 
         // 1. check rows
         // go max 4 pos to the left and see how far we can go
-        for i in 1..=min(4, position.x) {
+        for _ in 1..=min(4, position.x) {
             c.x = c.x - 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
@@ -98,7 +97,7 @@ impl Board {
             return true;
         }
         c = Coords { x: position.x.clone(), y: position.y.clone() };
-        for i in 1..=max(4, BOARD_SIZE - 1 - position.x as usize) {
+        for _ in 1..=max(4, BOARD_SIZE - 1 - position.x as usize) {
             c.x = c.x + 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
@@ -113,7 +112,7 @@ impl Board {
         c = Coords { x: position.x.clone(), y: position.y.clone() };
         counter = 1;
 
-        for i in 1..=min(4, position.y) {
+        for _ in 1..=min(4, position.y) {
             c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
@@ -125,7 +124,7 @@ impl Board {
             return true;
         }
         c = Coords { x: position.x.clone(), y: position.y.clone() };
-        for i in 1..=max(4, BOARD_SIZE - 1 - position.y as usize) {
+        for _ in 1..=max(4, BOARD_SIZE - 1 - position.y as usize) {
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
@@ -145,7 +144,7 @@ impl Board {
         //     x x o x o x 
         c = Coords { x: position.x.clone(), y: position.y.clone() };
         counter = 1;
-        for i in 1..=min(4, min(position.x, position.y)) {
+        for _ in 1..=min(4, min(position.x, position.y)) {
             c.x = c.x - 1;
             c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
@@ -158,7 +157,7 @@ impl Board {
             return true;
         }
         c = Coords { x: position.x.clone(), y: position.y.clone() };
-        for i in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
+        for _ in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
             c.x = c.x + 1;
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
@@ -174,7 +173,7 @@ impl Board {
         //4. check diagonal (NE - SW)
         c = Coords { x: position.x.clone(), y: position.y.clone() };
         let mut counter = 1;
-        for i in 1..=min(4, min(position.x, position.y)) {
+        for _ in 1..=min(4, min(position.x, position.y)) {
             c.x = c.x - 1;
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
@@ -187,7 +186,7 @@ impl Board {
             return true;
         }
         c = Coords { x: position.x.clone(), y: position.y.clone() };
-        for i in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
+        for _ in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
             if c.y == 0 {
                 break;
             }
@@ -202,10 +201,6 @@ impl Board {
                 return true;
             }
         }
-        // 5. Check if board is filled -> Tie
-        if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64{
-            return true; 
-        }
         false
     }
     /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
@@ -213,7 +208,10 @@ impl Board {
     /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
     /// that the last move was made in.
     pub fn update_winner(&mut self, coords: Coords) {
-        print!("am i even here?");
+        if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64{
+            self.winner = Some(Winner::Tie);
+            return;
+        }
         if self.check_winner(coords) {
             if self.current_piece == Piece::X{
                 self.winner =  Some(Winner::X);
@@ -221,8 +219,6 @@ impl Board {
             } else if self.current_piece == Piece::O{
                 self.winner =  Some(Winner::O);
                 print!("O is the winner");
-            } else {
-                self.winner = Some(Winner::Tie);
             }
         }
     }

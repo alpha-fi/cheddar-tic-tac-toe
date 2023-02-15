@@ -285,7 +285,6 @@ impl Contract {
                 game.board.update_winner(Coords {y: row as u8, x: col as u8});
 
                 if let Some(winner) = game.board.winner {
-                    print!("am i the winner?");
                     // change game state to Finished
                     game.change_state(GameState::Finished);
                     self.internal_update_game(game_id, &game);
@@ -785,6 +784,7 @@ mod tests {
             .attached_deposit(ONE_YOCTO)
             .build()
         );
+
         ctr.stop_game(&game_id_cheddar);
         Ok((ctx, ctr))
     }
