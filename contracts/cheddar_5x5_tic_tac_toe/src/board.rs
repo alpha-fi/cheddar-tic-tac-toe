@@ -387,7 +387,7 @@ mod test {
         assert_eq!(result, true); 
     }
     #[test]
-    fn check_se_diagonal_winner() {
+    fn check_se_diagonal_winner_1() {
         // create two players
         let piece_1 = Piece::X;
         let piece_2 = Piece::O;
@@ -408,6 +408,54 @@ mod test {
         board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
         board.tiles.insert(&Coords { x: 3, y: 3}, &piece_2);
         let result = board.check_winner(Coords{ x: 4, y: 4 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_se_diagonal_winner_2() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // _  _ _ _ _
+        // _ O _ _ _
+        // _ _ O _ _
+        // _ _ _ O _
+        // _ _ _ _ O
+        board.tiles.insert(&Coords { x: 4, y: 4}, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 3}, &piece_2);
+        let result = board.check_winner(Coords{ x: 0, y: 0 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_se_diagonal_winner_3() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // O _ _ _ _
+        // _ O _ _ _
+        // _ _ _ _ _
+        // _ _ _ O _
+        // _ _ _ _ O
+        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 4, y: 4}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 3}, &piece_2);
+        let result = board.check_winner(Coords{ x: 2, y: 2 });
         assert_eq!(result, true); 
     }
     #[test]
