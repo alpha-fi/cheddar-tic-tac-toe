@@ -1,7 +1,5 @@
 use std::cmp::{min, max};
 
-use near_sdk::serde;
-
 use crate::*;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Copy)]
@@ -13,7 +11,7 @@ pub enum Winner {
     Tie,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MoveError {
     /// The game was already over when a move was attempted
     GameAlreadyOver,
@@ -65,7 +63,7 @@ impl Board {
         if self.winner.is_some() {
             return Err(MoveError::GameAlreadyOver);
         }
-        if row > BOARD_SIZE || col > BOARD_SIZE {
+        if row >= BOARD_SIZE || col >= BOARD_SIZE {
             return Err(MoveError::InvalidPosition { row, col });
         }
         // Move in already filled tile
@@ -111,7 +109,6 @@ impl Board {
         // 2. check collumns 
         c = Coords { x: position.x.clone(), y: position.y.clone() };
         counter = 1;
-
         for _ in 1..=min(4, position.y) {
             c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
@@ -231,5 +228,90 @@ impl Board {
             }
         }
         return local_vector;
+    }
+}
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod test {
+    use near_sdk::AccountId;
+
+    use crate::{player::{Piece, Player}, utils::BOARD_SIZE, board::Coords};
+    use super::MoveError;
+    use super::Board;
+
+    #[test]
+    fn valid_move() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let board = Board::new(&player_1, &player_2);
+
+        // make move
+        let _ = board.check_move(0, 0);
+    }
+    #[test]
+    fn index_out_of_bound() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let board = Board::new(&player_1, &player_2);
+
+        // make move
+        let result = board.check_move(BOARD_SIZE,BOARD_SIZE);
+        assert_eq!(result, Err(MoveError::InvalidPosition { row: BOARD_SIZE, col: BOARD_SIZE }));
+    }
+    #[test]
+    fn alreddy_taken_field() {
+        // create two players
+        let piece_1 = Piece::random();
+        let piece_2 = piece_1.other();
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // make move
+        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_1);
+        let result = board.check_move(0,0);
+        assert_eq!(result, Err(MoveError::TileFilled {
+            other_piece: piece_1,
+            row: 0,
+            col: 0})); 
+    }
+    #[test]
+    fn check_winner() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // O O O O _
+        // X X X X _
+        // _ _ _ _ _
+        // _ _ _ _ _
+        // _ _ _ _ _
+        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_1);
+        board.tiles.insert(&Coords { x: 1, y: 0}, &piece_1);
+        board.tiles.insert(&Coords { x: 2, y: 0}, &piece_1);
+        board.tiles.insert(&Coords { x: 3, y: 0}, &piece_1);
+        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
+        let result = board.check_winner(Coords{ x: 4, y: 1 });
+        assert_eq!(result, true); 
     }
 }

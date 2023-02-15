@@ -729,7 +729,7 @@ mod tests {
         let game_cheddar = ctr.internal_get_game(&game_id_cheddar);
         let game_near = ctr.internal_get_game(&game_id_near);
         // cheddar
-        let player_1_c = game_cheddar.current_player_account_id().clone();
+        let _player_1_c = game_cheddar.current_player_account_id().clone();
         let player_2_c = game_cheddar.next_player_account_id().clone();
         // near
         let player_1_n = game_near.current_player_account_id().clone();
@@ -791,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_whitelist_token() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        let (_, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
             (acc_cheddar(), U128(ONE_CHEDDAR / 10))
