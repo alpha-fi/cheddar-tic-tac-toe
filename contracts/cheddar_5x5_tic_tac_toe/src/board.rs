@@ -170,9 +170,9 @@ impl Board {
         //4. check diagonal (NE - SW)
         c = Coords { x: position.x.clone(), y: position.y.clone() };
         let mut counter = 1;
-        for _ in 1..=min(4, min(position.x, position.y)) {
-            c.x = c.x - 1;
-            c.y = c.y + 1;
+        for _ in 1..=position.y {
+            c.x = c.x + 1;
+            c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
             } else {
@@ -183,12 +183,9 @@ impl Board {
             return true;
         }
         c = Coords { x: position.x.clone(), y: position.y.clone() };
-        for _ in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
-            if c.y == 0 {
-                break;
-            }
-            c.x = c.x + 1;
-            c.y = c.y - 1;
+        for _ in 1..=position.x {
+            c.x = c.x - 1;
+            c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
                 counter+=1;
             } else {
@@ -459,7 +456,7 @@ mod test {
         assert_eq!(result, true); 
     }
     #[test]
-    fn check_sw_diagonal_winner() {
+    fn check_sw_diagonal_winner_1() {
         // create two players
         let piece_1 = Piece::X;
         let piece_2 = Piece::O;
@@ -480,6 +477,54 @@ mod test {
         board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
         board.tiles.insert(&Coords { x: 1, y: 3}, &piece_2);
         let result = board.check_winner(Coords{ x: 0, y: 4 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_sw_diagonal_winner_2() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // _ _ _ _ _
+        // _ _ _ O _
+        // _ _ O _ _
+        // _ O _ _ _
+        // O _ _ _ _
+        board.tiles.insert(&Coords { x: 0, y: 4}, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 3}, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
+        let result = board.check_winner(Coords{ x: 4, y: 0 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_sw_diagonal_winner_3() {
+        // create two players
+        let piece_1 = Piece::X;
+        let piece_2 = Piece::O;
+        let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
+        let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
+
+        // initialize the board
+        let mut board = Board::new(&player_1, &player_2);
+
+        // prepare the board
+        // _ _ _ _ O
+        // _ _ _ O _
+        // _ _ O _ _
+        // _ _ _ _ _
+        // O _ _ _ _
+        board.tiles.insert(&Coords { x: 4, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 4}, &piece_2);
+        let result = board.check_winner(Coords{ x: 1, y: 3 });
         assert_eq!(result, true); 
     }
     #[test]

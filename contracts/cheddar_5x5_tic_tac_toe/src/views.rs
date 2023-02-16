@@ -29,7 +29,7 @@ pub struct GameView {
     pub game_status: GameState,
     pub current_player: Player,
     pub reward: GameDeposit,
-    // pub tiles: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
+    pub tiles: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
     /* * */
     pub initiated_at_sec: u32,
     pub last_turn_timestamp_sec: u32,
@@ -75,7 +75,7 @@ impl From<&Game> for GameView {
             game_status: g.game_state,
             current_player,
             reward: g.reward(),
-            // tiles: g.board.tiles,
+            tiles: g.board.get_vector(),
             initiated_at_sec: nano_to_sec(g.initiated_at),
             last_turn_timestamp_sec: nano_to_sec(g.last_turn_timestamp),
             current_duration_sec: nano_to_sec(g.current_duration),
