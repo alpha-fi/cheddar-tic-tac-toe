@@ -1,11 +1,11 @@
 use crate::*;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub enum GameState {
     NotStarted,
     Active,
-    Finished
+    Finished,
 }
 
 /// Deposit into `Game` for each `Player`
@@ -36,27 +36,32 @@ pub struct Game {
 impl Game {
     /// set players in given order. First player (`player_1`)
     /// will have first move
-    /// It generates randomly in `Contract.start_game` because 
+    /// It generates randomly in `Contract.start_game` because
     /// first move gives more chances to win
     pub fn create_game(
+        game_id: GameId,
         player_1: AccountId,
         player_2: AccountId,
-        reward: GameDeposit
+        reward: GameDeposit,
     ) -> Game {
-        assert_ne!(player_1, player_2, "Player 1 and Player 2 have the same AccountId: @{}", &player_1);
+        assert_ne!(
+            player_1, player_2,
+            "Player 1 and Player 2 have the same AccountId: @{}",
+            &player_1
+        );
         let (player_1, player_2) = Game::create_players(player_1, player_2);
-        let board = Board::new(&player_1, &player_2);
-        let mut game = Game { 
-            game_state: GameState::NotStarted, 
-            players:Vec::with_capacity(PLAYERS_NUM),
+        let board = Board::new(game_id, &player_1, &player_2);
+        let mut game = Game {
+            game_state: GameState::NotStarted,
+            players: Vec::with_capacity(PLAYERS_NUM),
             current_piece: player_1.piece,
             // player_1 index is 0
             current_player_index: 0,
-            reward, 
-            board, 
-            total_turns: 0, 
+            reward,
+            board,
+            total_turns: 0,
             initiated_at: env::block_timestamp(),
-            last_turn_timestamp: 0, 
+            last_turn_timestamp: 0,
             current_duration: 0,
         };
         game.set_players(player_1, player_2);
@@ -68,7 +73,7 @@ impl Game {
         let piece_2 = piece_1.other();
         (
             Player::new(piece_1, account_id_1),
-            Player::new(piece_2, account_id_2)
+            Player::new(piece_2, account_id_2),
         )
     }
     /// set two players in `game.players`
@@ -81,13 +86,11 @@ impl Game {
         assert_eq!(self.players[1], player_2.clone());
 
         assert_eq!(
-            self.players[0].piece,
-            self.board.current_piece,
+            self.players[0].piece, self.board.current_piece,
             "Invalid game settings: First player's Piece mismatched on Game <-> Board"
         );
         assert_ne!(
-            self.players[1].piece,
-            self.board.current_piece,
+            self.players[1].piece, self.board.current_piece,
             "Invalid game settings: Second player's Piece mismatched on Game <-> Board"
         );
         assert_ne!(
@@ -97,7 +100,11 @@ impl Game {
     }
 
     pub fn change_state(&mut self, new_state: GameState) {
-        assert_ne!(new_state, self.game_state, "State is already {:?}", new_state);
+        assert_ne!(
+            new_state, self.game_state,
+            "State is already {:?}",
+            new_state
+        );
         self.game_state = new_state
     }
 
@@ -112,7 +119,10 @@ impl Game {
     }
 
     pub fn get_player_accounts(&self) -> (AccountId, AccountId) {
-        (self.current_player_account_id(), self.next_player_account_id())
+        (
+            self.current_player_account_id(),
+            self.next_player_account_id(),
+        )
     }
 
     pub fn current_player_account_id(&self) -> AccountId {
@@ -126,7 +136,9 @@ impl Game {
     }
 
     pub fn contains_player_account_id(&self, account_id: &AccountId) -> bool {
-        if &self.current_player_account_id() == account_id || &self.next_player_account_id() == account_id {
+        if &self.current_player_account_id() == account_id
+            || &self.next_player_account_id() == account_id
+        {
             true
         } else {
             false
@@ -136,7 +148,7 @@ impl Game {
         self.reward.clone()
     }
 
-    pub fn get_opponent(&self, player: &AccountId)->AccountId{
+    pub fn get_opponent(&self, player: &AccountId) -> AccountId {
         if *player == self.current_player_account_id() {
             return self.next_player_account_id();
         } else {
@@ -144,11 +156,19 @@ impl Game {
         }
     }
 
-    pub fn claim_timeout_win(&self, player: &AccountId) -> bool{
+    pub fn claim_timeout_win(&self, player: &AccountId) -> bool {
         //1. Check if the game is still going
-        assert_eq!(self.game_state, GameState::Active, "The game is already over!");
-        //2. Check if opponets move 
-        assert_ne!(*player, self.current_player_account_id(), "Can't claim timeout win if it's your turn");
+        assert_eq!(
+            self.game_state,
+            GameState::Active,
+            "The game is already over!"
+        );
+        //2. Check if opponets move
+        assert_ne!(
+            *player,
+            self.current_player_account_id(),
+            "Can't claim timeout win if it's your turn"
+        );
         //3. Check for timeout
         let cur_timestamp = env::block_timestamp();
         if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN {
@@ -156,5 +176,4 @@ impl Game {
         }
         true
     }
-    
 }
