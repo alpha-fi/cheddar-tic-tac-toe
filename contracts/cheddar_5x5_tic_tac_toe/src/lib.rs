@@ -411,6 +411,7 @@ impl Contract {
         self.internal_stop_game(game_id);
     }
 
+    // TODO: remove this
     pub fn stop_game(&mut self, game_id: &GameId) {
         let mut game: Game = self.internal_get_game(&game_id);
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
@@ -421,12 +422,6 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
-        log!("game.current_duration : {}", game.current_duration);
-        log!("env::block_timestamp() : {}", env::block_timestamp());
-        log!("game.initiated_at : {}", game.initiated_at);
-        log!("self.max_game_duration : {}", self.max_game_duration);
-        log!("game.last_turn_timestamp : {}", game.last_turn_timestamp);
-        log!("self.max_turn_duration :{} ", self.max_turn_duration);
         assert!(
             game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
             "Too early to stop the game"

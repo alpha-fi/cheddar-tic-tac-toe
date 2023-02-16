@@ -100,8 +100,10 @@ impl Contract {
                 .with_static_gas(GAS_FOR_FT_TRANSFER)
                 .with_attached_deposit(ONE_YOCTO)
                 .ft_transfer(receiver_id.clone(), amount, None)
+            // TODO (finish): .then(callback to check the transfer)
         }
     }
+
     pub(crate) fn internal_distribute_reward(
         &mut self,
         game_id: &GameId,
