@@ -1,8 +1,8 @@
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 
 use crate::*;
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Copy)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
 #[serde(crate = "near_sdk::serde")]
 pub enum Winner {
@@ -14,7 +14,7 @@ pub enum Winner {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MoveError {
     /// The game was already over when a move was attempted
-    GameAlreadyOver,
+    GameOver,
     /// The position provided was invalid
     InvalidPosition { row: usize, col: usize },
     /// The tile already contained another piece
@@ -37,37 +37,40 @@ pub struct Coords {
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 // #[serde(crate = "near_sdk::serde")]
 pub struct Board {
-    pub(crate) tiles: UnorderedMap<Coords, Piece>,
+    pub tiles: UnorderedMap<Coords, Piece>,
     /// X or O: who is currently playing
-    pub(crate) current_piece: Piece,
-    pub(crate) winner: Option<Winner>,
+    pub current_piece: Piece,
+    pub winner: Option<Winner>,
 }
 
 impl Board {
     /// there is two players with different AccountId's and
     /// with different random given pieces
     /// accounts check in `Game.create_game`
-    pub fn new(player_1: &Player, player_2: &Player) -> Self {
+    pub fn new(game_id: GameId, player_1: &Player, player_2: &Player) -> Self {
         assert_ne!(
             player_1.piece, player_2.piece,
             "players have same pieces: {:?}",
             player_1.piece
         );
         Self {
-            tiles: UnorderedMap::new(env::sha256(&player_1.account_id.as_bytes())),//account hash
+            tiles: UnorderedMap::new(StorageKey::GameBoard { game_id }),
             current_piece: player_1.piece,
             winner: None,
         }
     }
     pub fn check_move(&self, row: usize, col: usize) -> Result<(), MoveError> {
         if self.winner.is_some() {
-            return Err(MoveError::GameAlreadyOver);
+            return Err(MoveError::GameOver);
         }
         if row >= BOARD_SIZE || col >= BOARD_SIZE {
             return Err(MoveError::InvalidPosition { row, col });
         }
         // Move in already filled tile
-        else if let Some(other_piece) = self.tiles.get(&Coords { x: col as u8, y: row as u8 }) {
+        else if let Some(other_piece) = self.tiles.get(&Coords {
+            x: col as u8,
+            y: row as u8,
+        }) {
             return Err(MoveError::TileFilled {
                 other_piece,
                 row,
@@ -78,7 +81,10 @@ impl Board {
     }
     pub fn check_winner(&self, position: Coords) -> bool {
         let expected = Some(self.current_piece.other());
-        let mut c: Coords = Coords { x: position.x.clone(), y: position.y.clone() };
+        let mut c: Coords = Coords {
+            x: position.x.clone(),
+            y: position.y.clone(),
+        };
         let mut counter = 1;
 
         // 1. check rows
@@ -86,7 +92,7 @@ impl Board {
         for _ in 1..=min(4, position.x) {
             c.x = c.x - 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -94,11 +100,14 @@ impl Board {
         if counter >= 5 {
             return true;
         }
-        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        c = Coords {
+            x: position.x.clone(),
+            y: position.y.clone(),
+        };
         for _ in 1..=max(4, BOARD_SIZE - 1 - position.x as usize) {
             c.x = c.x + 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -106,13 +115,16 @@ impl Board {
                 return true;
             }
         }
-        // 2. check collumns 
-        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        // 2. check collumns
+        c = Coords {
+            x: position.x.clone(),
+            y: position.y.clone(),
+        };
         counter = 1;
         for _ in 1..=min(4, position.y) {
             c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -120,11 +132,14 @@ impl Board {
         if counter >= 5 {
             return true;
         }
-        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        c = Coords {
+            x: position.x.clone(),
+            y: position.y.clone(),
+        };
         for _ in 1..=max(4, BOARD_SIZE - 1 - position.y as usize) {
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -134,18 +149,21 @@ impl Board {
         }
         // 3. check diagonal (NW - SE)
         // eg. o X o o x o
-        //     x o X o o x 
+        //     x o X o o x
         //     o x x X o o
-        //     o o o x X x    
+        //     o o o x X x
         //     o o o x x X
-        //     x x o x o x 
-        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        //     x x o x o x
+        c = Coords {
+            x: position.x.clone(),
+            y: position.y.clone(),
+        };
         counter = 1;
         for _ in 1..=min(4, min(position.x, position.y)) {
             c.x = c.x - 1;
             c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -153,12 +171,18 @@ impl Board {
         if counter >= 5 {
             return true;
         }
-        c = Coords { x: position.x.clone(), y: position.y.clone() };
-        for _ in 1..=max(4, BOARD_SIZE - 1 - max(position.x as usize, position.y as usize)) {
+        c = Coords {
+            x: position.x.clone(),
+            y: position.y.clone(),
+        };
+        for _ in 1..=max(
+            4,
+            BOARD_SIZE - 1 - max(position.x as usize, position.y as usize),
+        ) {
             c.x = c.x + 1;
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -168,13 +192,16 @@ impl Board {
         }
 
         //4. check diagonal (NE - SW)
-        c = Coords { x: position.x.clone(), y: position.y.clone() };
+        c = Coords {
+            x: position.x.clone(),
+            y: position.y.clone(),
+        };
         let mut counter = 1;
         for _ in 1..=position.y {
             c.x = c.x + 1;
             c.y = c.y - 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -187,7 +214,7 @@ impl Board {
             c.x = c.x - 1;
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
-                counter+=1;
+                counter += 1;
             } else {
                 break;
             }
@@ -202,26 +229,46 @@ impl Board {
     /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
     /// that the last move was made in.
     pub fn update_winner(&mut self, coords: Coords) {
-        if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64{
+        if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64 {
             self.winner = Some(Winner::Tie);
             return;
         }
         if self.check_winner(coords) {
-            if self.current_piece == Piece::X{
-                self.winner =  Some(Winner::X);
+            if self.current_piece == Piece::X {
+                self.winner = Some(Winner::X);
                 print!("X is the winner");
-            } else if self.current_piece == Piece::O{
-                self.winner =  Some(Winner::O);
+            } else if self.current_piece == Piece::O {
+                self.winner = Some(Winner::O);
                 print!("O is the winner");
             }
         }
     }
 
     pub fn get_vector(&self) -> [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] {
-        let mut local_vector: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] = Default::default();
+        let mut local_vector: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] =
+            Default::default();
+
+        // TODO:
+        // + don't save matrix in the state. Intstead save two lists:
+        //   (list of coords taken by X, list of coords taken by O)
+        // + same for the UI query / view
+
+        // let mut o_coords = Vec::new();
+        // let mut x_coords = Vec::new();
+        // for (c, p) in self.tiles.iter() {
+        //     match p {
+        //         Piece::O => o_coords.append(c),
+        //         Piece::X => x_coords.append(c),
+        //     }
+        // }
+        // return (o_coords, x_coords)
+
         for x in 0..=BOARD_SIZE - 1 {
             for y in 0..=BOARD_SIZE - 1 {
-                local_vector[y as usize][x as usize] = self.tiles.get(&Coords { x: x as u8, y: y as u8 });
+                local_vector[y as usize][x as usize] = self.tiles.get(&Coords {
+                    x: x as u8,
+                    y: y as u8,
+                });
             }
         }
         return local_vector;
@@ -231,9 +278,13 @@ impl Board {
 mod test {
     use near_sdk::AccountId;
 
-    use crate::{player::{Piece, Player}, utils::BOARD_SIZE, board::Coords};
-    use super::MoveError;
     use super::Board;
+    use super::MoveError;
+    use crate::{
+        board::Coords,
+        player::{Piece, Player},
+        utils::BOARD_SIZE,
+    };
 
     #[test]
     fn valid_move() {
@@ -261,8 +312,14 @@ mod test {
         let board = Board::new(&player_1, &player_2);
 
         // make move
-        let result = board.check_move(BOARD_SIZE,BOARD_SIZE);
-        assert_eq!(result, Err(MoveError::InvalidPosition { row: BOARD_SIZE, col: BOARD_SIZE }));
+        let result = board.check_move(BOARD_SIZE, BOARD_SIZE);
+        assert_eq!(
+            result,
+            Err(MoveError::InvalidPosition {
+                row: BOARD_SIZE,
+                col: BOARD_SIZE
+            })
+        );
     }
     #[test]
     fn alreddy_taken_field() {
@@ -276,12 +333,16 @@ mod test {
         let mut board = Board::new(&player_1, &player_2);
 
         // make move
-        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_1);
-        let result = board.check_move(0,0);
-        assert_eq!(result, Err(MoveError::TileFilled {
-            other_piece: piece_1,
-            row: 0,
-            col: 0})); 
+        board.tiles.insert(&Coords { x: 0, y: 0 }, &piece_1);
+        let result = board.check_move(0, 0);
+        assert_eq!(
+            result,
+            Err(MoveError::TileFilled {
+                other_piece: piece_1,
+                row: 0,
+                col: 0
+            })
+        );
     }
     #[test]
     fn check_row_winner() {
@@ -300,16 +361,16 @@ mod test {
         // _ _ _ _ _
         // _ _ _ _ _
         // _ _ _ _ _
-        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_1);
-        board.tiles.insert(&Coords { x: 1, y: 0}, &piece_1);
-        board.tiles.insert(&Coords { x: 2, y: 0}, &piece_1);
-        board.tiles.insert(&Coords { x: 3, y: 0}, &piece_1);
-        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 2, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
-        let result = board.check_winner(Coords{ x: 4, y: 1 });
-        assert_eq!(result, true); 
+        board.tiles.insert(&Coords { x: 0, y: 0 }, &piece_1);
+        board.tiles.insert(&Coords { x: 1, y: 0 }, &piece_1);
+        board.tiles.insert(&Coords { x: 2, y: 0 }, &piece_1);
+        board.tiles.insert(&Coords { x: 3, y: 0 }, &piece_1);
+        board.tiles.insert(&Coords { x: 0, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1 }, &piece_2);
+        let result = board.check_winner(Coords { x: 4, y: 1 });
+        assert_eq!(result, true);
     }
     #[test]
     fn check_column_winner_1() {
@@ -328,12 +389,12 @@ mod test {
         // O _ _ _ _
         // O _ _ _ _
         // _ _ _ _ _
-        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 2}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 3}, &piece_2);
-        let result = board.check_winner(Coords{ x: 0, y: 4});
-        assert_eq!(result, true); 
+        board.tiles.insert(&Coords { x: 0, y: 0 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 2 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 3 }, &piece_2);
+        let result = board.check_winner(Coords { x: 0, y: 4 });
+        assert_eq!(result, true);
     }
     #[test]
     fn check_column_winner_2() {
@@ -352,12 +413,12 @@ mod test {
         // O _ _ _ _
         // O _ _ _ _
         // O _ _ _ _
-        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 2}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 3}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 4}, &piece_2);
-        let result = board.check_winner(Coords{ x: 0, y: 0 });
-        assert_eq!(result, true); 
+        board.tiles.insert(&Coords { x: 0, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 2 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 3 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 4 }, &piece_2);
+        let result = board.check_winner(Coords { x: 0, y: 0 });
+        assert_eq!(result, true);
     }
     #[test]
     fn check_column_winner_3() {
@@ -376,12 +437,12 @@ mod test {
         // _ _ _ _ _
         // O _ _ _ _
         // O _ _ _ _
-        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 3}, &piece_2);
-        board.tiles.insert(&Coords { x: 0, y: 4}, &piece_2);
-        let result = board.check_winner(Coords{ x: 0, y: 2 });
-        assert_eq!(result, true); 
+        board.tiles.insert(&Coords { x: 0, y: 0 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 3 }, &piece_2);
+        board.tiles.insert(&Coords { x: 0, y: 4 }, &piece_2);
+        let result = board.check_winner(Coords { x: 0, y: 2 });
+        assert_eq!(result, true);
     }
     #[test]
     fn check_se_diagonal_winner_1() {
@@ -400,12 +461,12 @@ mod test {
         // _ _ O _ _
         // _ _ _ O _
         // _ _ _ _ _
-        board.tiles.insert(&Coords { x: 0, y: 0}, &piece_2);
-        board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
-        board.tiles.insert(&Coords { x: 3, y: 3}, &piece_2);
-        let result = board.check_winner(Coords{ x: 4, y: 4 });
-        assert_eq!(result, true); 
+        board.tiles.insert(&Coords { x: 0, y: 0 }, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2 }, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 3 }, &piece_2);
+        let result = board.check_winner(Coords { x: 4, y: 4 });
+        assert_eq!(result, true);
     }
     #[test]
     fn check_se_diagonal_winner_2() {
@@ -472,12 +533,12 @@ mod test {
         // _ _ O _ _
         // _ O _ _ _
         // _ _ _ _ _
-        board.tiles.insert(&Coords { x: 4, y: 0}, &piece_2);
-        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
-        board.tiles.insert(&Coords { x: 1, y: 3}, &piece_2);
-        let result = board.check_winner(Coords{ x: 0, y: 4 });
-        assert_eq!(result, true); 
+        board.tiles.insert(&Coords { x: 4, y: 0 }, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2 }, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 3 }, &piece_2);
+        let result = board.check_winner(Coords { x: 0, y: 4 });
+        assert_eq!(result, true);
     }
     #[test]
     fn check_sw_diagonal_winner_2() {
@@ -543,10 +604,10 @@ mod test {
         // _ _ O _ _
         // _ O _ _ _
         // _ _ _ _ _
-        board.tiles.insert(&Coords { x: 4, y: 0}, &piece_2);
-        board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
-        board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
-        board.tiles.insert(&Coords { x: 1, y: 3}, &piece_2);
+        board.tiles.insert(&Coords { x: 4, y: 0 }, &piece_2);
+        board.tiles.insert(&Coords { x: 3, y: 1 }, &piece_2);
+        board.tiles.insert(&Coords { x: 2, y: 2 }, &piece_2);
+        board.tiles.insert(&Coords { x: 1, y: 3 }, &piece_2);
         let vector = board.get_vector();
         assert_eq!(vector.len(), BOARD_SIZE);
         assert_eq!(vector[0].len(), BOARD_SIZE);
@@ -558,3 +619,4 @@ mod test {
         assert_eq!(vector[4][4], None);
     }
 }
+

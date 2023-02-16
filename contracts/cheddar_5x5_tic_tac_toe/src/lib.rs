@@ -39,6 +39,7 @@ pub enum StorageKey {
     WhitelistedTokens,
     Games,
     StoredGames,
+    GameBoard {game_id: GameId},
     Players,
     /* * */
     Stats,
@@ -177,7 +178,7 @@ impl Contract {
                     .transfer_deposit_callback(account_id, &config)
                 );
             },
-            None => panic!("You are not available now")
+            None => () // skip
         }
     }
 
@@ -185,7 +186,7 @@ impl Contract {
         if let Some(player_2_config) = self.available_players.get(&player_2_id) {
             // Check is game initiator (predecessor) player available to play as well
             let player_1_id = env::predecessor_account_id();
-            assert_ne!(player_1_id.clone(), player_2_id.clone(), "Find a friend to play");
+            assert_ne!(player_1_id.clone(), player_2_id.clone(), "you can't play with yourself");
 
             // Get predecessor's available deposit
             let player_1_config = self.internal_get_available_player(&player_1_id);
@@ -193,7 +194,8 @@ impl Contract {
             let player_1_deposit = player_1_config.deposit;
 
             self.internal_check_player_available(&player_1_id);
-            
+
+            // we can't play in parallel with someone else?
             if let Some(player_id) = player_2_config.opponent_id {
                 assert_eq!(player_id, player_1_id, "Wrong account");
             }
@@ -210,7 +212,7 @@ impl Contract {
             let game_id = self.next_game_id;
             let token_id = player_2_config.token_id;
 
-            assert_eq!(token_id, player_1_config_token, "Mismatch tokens! Choosen tokens for opponent and you must be the same");
+            assert_eq!(token_id, player_1_config_token, "Mismatch deposit token! Both players have to deposit the same token to play the game");
             // deposit * 2
             let balance = match player_2_config.deposit.checked_mul(2) {
                 Some(value) => value,
@@ -224,23 +226,11 @@ impl Contract {
             log!("game reward:{} in token {:?} ", balance, token_id.clone());
             
             let seed = near_sdk::env::random_seed();
-            let mut game = match seed[0] % 2 {
-                0 => {
-                    Game::create_game(
-                    player_2_id.clone(),
-                    player_1_id.clone(),
-                    reward
-                    )
-                },
-                _ => {
-                    Game::create_game(
-                    player_1_id.clone(),
-                    player_2_id.clone(),
-                    reward
-                    )
-                },
+            let (first_player, second_player) = match seed[0] % 2 {
+                0 => (player_2_id.clone(), player_1_id.clone()),
+                _ => (player_1_id.clone(), player_2_id.clone())
             };
-
+            let mut game = Game::create_game(game_id, first_player, second_player, reward);
             game.change_state(GameState::Active);
             self.games.insert(&game_id, &game);
 
@@ -263,16 +253,16 @@ impl Contract {
         }
     }
 
+    // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
     pub fn make_move(&mut self, game_id: &GameId, row: usize, col: usize) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
 
         let mut game = self.internal_get_game(game_id);
-        let init_game_state = game.game_state;
 
-        assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "No access");
-        assert_eq!(init_game_state, GameState::Active, "Current game isn't active");
+        assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "not your turn");
+        assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
 
         match game.board.check_move(row, col) {
             Ok(_) => {
@@ -284,7 +274,7 @@ impl Contract {
                 game.current_player_index = 1 - game.current_player_index;
                 game.board.update_winner(Coords {y: row as u8, x: col as u8});
 
-                if let Some(winner) = game.board.winner {
+                if let Some(winner) = game.board.winner.clone() {
                     // change game state to Finished
                     game.change_state(GameState::Finished);
                     self.internal_update_game(game_id, &game);
@@ -324,14 +314,14 @@ impl Contract {
                         board: game.board.get_vector(),
                     };
 
-                    self.internal_store_game(game_id, game_to_store);
+                    self.internal_store_game(game_id, &game_to_store);
                     self.internal_stop_game(game_id);
                     
-                    return game.board.get_vector();
+                    return game_to_store.board;
                 };
             },
             Err(e) => match e {
-                MoveError::GameAlreadyOver => panic!("Game is already finished"),
+                MoveError::GameOver => panic!("Game is finished"),
                 MoveError::InvalidPosition { row, col } => panic!(
                     "Provided position is invalid: row: {} col: {}", row, col),
                 MoveError::TileFilled { other_piece, row, col } => panic!(
@@ -417,10 +407,11 @@ impl Contract {
             board: game.board.get_vector(),
         };
 
-        self.internal_store_game(game_id, game_to_store);
+        self.internal_store_game(game_id, &game_to_store);
         self.internal_stop_game(game_id);
     }
 
+    // TODO: remove this
     pub fn stop_game(&mut self, game_id: &GameId) {
         let mut game: Game = self.internal_get_game(&game_id);
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
@@ -431,12 +422,6 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
-        log!("game.current_duration : {}", game.current_duration);
-        log!("env::block_timestamp() : {}", env::block_timestamp());
-        log!("game.initiated_at : {}", game.initiated_at);
-        log!("self.max_game_duration : {}", self.max_game_duration);
-        log!("game.last_turn_timestamp : {}", game.last_turn_timestamp);
-        log!("self.max_turn_duration :{} ", self.max_turn_duration);
         assert!(
             game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
             "Too early to stop the game"
@@ -472,7 +457,7 @@ impl Contract {
             board: game.board.get_vector(),
         };
 
-        self.internal_store_game(game_id, game_to_store);
+        self.internal_store_game(game_id, &game_to_store);
         self.internal_stop_game(game_id);
     }
 
@@ -496,7 +481,7 @@ impl Contract {
             },
             board: game.board.get_vector(),
         };
-        self.internal_store_game(game_id, game_to_store);
+        self.internal_store_game(game_id, &game_to_store);
     }
 }
 
