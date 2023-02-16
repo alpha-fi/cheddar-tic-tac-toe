@@ -293,9 +293,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let board = Board::new(&player_1, &player_2);
+        let board = Board::new(game_id, &player_1, &player_2);
 
         // make move
         let _ = board.check_move(0, 0);
@@ -307,9 +307,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let board = Board::new(&player_1, &player_2);
+        let board = Board::new(game_id, &player_1, &player_2);
 
         // make move
         let result = board.check_move(BOARD_SIZE, BOARD_SIZE);
@@ -328,9 +328,9 @@ mod test {
         let piece_2 = piece_1.other();
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // make move
         board.tiles.insert(&Coords { x: 0, y: 0 }, &piece_1);
@@ -351,9 +351,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // O O O O _
@@ -379,10 +379,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
-
+        let mut board = Board::new(game_id, &player_1, &player_2);
         // prepare the board
         // O _ _ _ _
         // O _ _ _ _
@@ -403,9 +402,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // _ _ _ _ _
@@ -427,9 +426,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // O _ _ _ _
@@ -451,9 +450,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // O _ _ _ _
@@ -475,9 +474,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // _  _ _ _ _
@@ -499,9 +498,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // O _ _ _ _
@@ -523,9 +522,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // _ _ _ _ O
@@ -547,9 +546,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // _ _ _ _ _
@@ -571,9 +570,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // prepare the board
         // _ _ _ _ O
@@ -594,9 +593,9 @@ mod test {
         let piece_2 = Piece::O;
         let player_1 = Player::new(piece_1, AccountId::new_unchecked("test1".into()));
         let player_2 = Player::new(piece_2, AccountId::new_unchecked("test2".into()));
-
+        let game_id: u64 = 1;
         // initialize the board
-        let mut board = Board::new(&player_1, &player_2);
+        let mut board = Board::new(game_id, &player_1, &player_2);
 
         // insert few testing values
         // _ _ _ _ O

@@ -850,7 +850,7 @@ mod tests {
         assert!(ctr.get_available_players().is_empty());
     }
     #[test]
-    #[should_panic(expected="Mismatch tokens! Choosen tokens for opponent and you must be the same")]
+    #[should_panic(expected="Mismatch deposit token! Both players have to deposit the same token to play the game")]
     fn start_game_diff_tokens() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         whitelist_token(&mut ctr);
