@@ -39,6 +39,7 @@ pub enum StorageKey {
     WhitelistedTokens,
     Games,
     StoredGames,
+    GameBoard {game_id: GameId},
     Players,
     /* * */
     Stats,
@@ -177,7 +178,7 @@ impl Contract {
                     .transfer_deposit_callback(account_id, &config)
                 );
             },
-            None => panic!("You are not available now")
+            None => () // skip
         }
     }
 
@@ -185,7 +186,7 @@ impl Contract {
         if let Some(player_2_config) = self.available_players.get(&player_2_id) {
             // Check is game initiator (predecessor) player available to play as well
             let player_1_id = env::predecessor_account_id();
-            assert_ne!(player_1_id.clone(), player_2_id.clone(), "Find a friend to play");
+            assert_ne!(player_1_id.clone(), player_2_id.clone(), "you can't play with yourself");
 
             // Get predecessor's available deposit
             let player_1_config = self.internal_get_available_player(&player_1_id);
@@ -193,7 +194,8 @@ impl Contract {
             let player_1_deposit = player_1_config.deposit;
 
             self.internal_check_player_available(&player_1_id);
-            
+
+            // we can't play in parallel with someone else?
             if let Some(player_id) = player_2_config.opponent_id {
                 assert_eq!(player_id, player_1_id, "Wrong account");
             }
@@ -210,7 +212,7 @@ impl Contract {
             let game_id = self.next_game_id;
             let token_id = player_2_config.token_id;
 
-            assert_eq!(token_id, player_1_config_token, "Mismatch tokens! Choosen tokens for opponent and you must be the same");
+            assert_eq!(token_id, player_1_config_token, "Mismatch deposit token! Both players have to deposit the same token to play the game");
             // deposit * 2
             let balance = match player_2_config.deposit.checked_mul(2) {
                 Some(value) => value,
@@ -224,23 +226,11 @@ impl Contract {
             log!("game reward:{} in token {:?} ", balance, token_id.clone());
             
             let seed = near_sdk::env::random_seed();
-            let mut game = match seed[0] % 2 {
-                0 => {
-                    Game::create_game(
-                    player_2_id.clone(),
-                    player_1_id.clone(),
-                    reward
-                    )
-                },
-                _ => {
-                    Game::create_game(
-                    player_1_id.clone(),
-                    player_2_id.clone(),
-                    reward
-                    )
-                },
+            let (first_player, second_player) = match seed[0] % 2 {
+                0 => (player_2_id.clone(), player_1_id.clone()),
+                _ => (player_1_id.clone(), player_2_id.clone())
             };
-
+            let mut game = Game::create_game(game_id, first_player, second_player, reward);
             game.change_state(GameState::Active);
             self.games.insert(&game_id, &game);
 
@@ -263,28 +253,28 @@ impl Contract {
         }
     }
 
+    // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
     pub fn make_move(&mut self, game_id: &GameId, row: usize, col: usize) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
 
         let mut game = self.internal_get_game(game_id);
-        let init_game_state = game.game_state;
 
-        assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "No access");
-        assert_eq!(init_game_state, GameState::Active, "Current game isn't active");
+        assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "not your turn");
+        assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
 
         match game.board.check_move(row, col) {
             Ok(_) => {
                 // fill board tile with current player piece
-                game.board.tiles[row][col] = Some(game.current_piece);
+                game.board.tiles.insert(&Coords {y: row as u8, x: col as u8}, &game.current_piece);
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
-                game.board.update_winner(row, col);
+                game.board.update_winner(Coords {y: row as u8, x: col as u8});
 
-                if let Some(winner) = game.board.winner {
+                if let Some(winner) = game.board.winner.clone() {
                     // change game state to Finished
                     game.change_state(GameState::Finished);
                     self.internal_update_game(game_id, &game);
@@ -321,17 +311,17 @@ impl Contract {
                             token_id: game.reward().token_id,
                             balance
                         },
-                        board: game.board.tiles,
+                        board: game.board.get_vector(),
                     };
 
-                    self.internal_store_game(game_id, game_to_store);
+                    self.internal_store_game(game_id, &game_to_store);
                     self.internal_stop_game(game_id);
                     
-                    return game.board.tiles;
+                    return game_to_store.board;
                 };
             },
             Err(e) => match e {
-                MoveError::GameAlreadyOver => panic!("Game is already finished"),
+                MoveError::GameOver => panic!("Game is finished"),
                 MoveError::InvalidPosition { row, col } => panic!(
                     "Provided position is invalid: row: {} col: {}", row, col),
                 MoveError::TileFilled { other_piece, row, col } => panic!(
@@ -354,10 +344,10 @@ impl Contract {
                     log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, cur_timestamp - game.initiated_at);
                     // looser - current player
                     self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                    return game.board.tiles;
+                    return game.board.get_vector();
                 } else {
                     self.internal_update_game(game_id, &game);
-                    return game.board.tiles;
+                    return game.board.get_vector();
                 }
             }
 
@@ -366,17 +356,17 @@ impl Contract {
                 log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, game.last_turn_timestamp - previous_turn_timestamp);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.tiles;
+                return game.board.get_vector();
             };
 
             if game.current_duration <= self.max_game_duration {
                 self.internal_update_game(game_id, &game);
-                return game.board.tiles;
+                return game.board.get_vector();
             } else {
                 log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.current_duration);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.tiles;
+                return game.board.get_vector();
             }
         } else {
             panic!("Something wrong with game id: {} state", game_id)
@@ -414,13 +404,14 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            board: game.board.tiles,
+            board: game.board.get_vector(),
         };
 
-        self.internal_store_game(game_id, game_to_store);
+        self.internal_store_game(game_id, &game_to_store);
         self.internal_stop_game(game_id);
     }
 
+    // TODO: remove this
     pub fn stop_game(&mut self, game_id: &GameId) {
         let mut game: Game = self.internal_get_game(&game_id);
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
@@ -431,12 +422,6 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
-        log!("game.current_duration : {}", game.current_duration);
-        log!("env::block_timestamp() : {}", env::block_timestamp());
-        log!("game.initiated_at : {}", game.initiated_at);
-        log!("self.max_game_duration : {}", self.max_game_duration);
-        log!("game.last_turn_timestamp : {}", game.last_turn_timestamp);
-        log!("self.max_turn_duration :{} ", self.max_turn_duration);
         assert!(
             game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
             "Too early to stop the game"
@@ -469,17 +454,17 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            board: game.board.tiles,
+            board: game.board.get_vector(),
         };
 
-        self.internal_store_game(game_id, game_to_store);
+        self.internal_store_game(game_id, &game_to_store);
         self.internal_stop_game(game_id);
     }
 
     pub fn claim_timeout_win(&mut self, game_id: &GameId) {
         let game: Game = self.internal_get_game(&game_id);
         let player = env::predecessor_account_id();
-        if game.claim_timeout_win(&player) == false {
+        if game.claim_timeout_win(player.clone()) == false {
             log!("can't claim the win, timeout didn't pass");
             return;
         }
@@ -494,9 +479,9 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            board: game.board.tiles,
+            board: game.board.get_vector(),
         };
-        self.internal_store_game(game_id, game_to_store);
+        self.internal_store_game(game_id, &game_to_store);
     }
 }
 
@@ -729,7 +714,7 @@ mod tests {
         let game_cheddar = ctr.internal_get_game(&game_id_cheddar);
         let game_near = ctr.internal_get_game(&game_id_near);
         // cheddar
-        let player_1_c = game_cheddar.current_player_account_id().clone();
+        let _player_1_c = game_cheddar.current_player_account_id().clone();
         let player_2_c = game_cheddar.next_player_account_id().clone();
         // near
         let player_1_n = game_near.current_player_account_id().clone();
@@ -784,13 +769,14 @@ mod tests {
             .attached_deposit(ONE_YOCTO)
             .build()
         );
+
         ctr.stop_game(&game_id_cheddar);
         Ok((ctx, ctr))
     }
 
     #[test]
     fn test_whitelist_token() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        let (_, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
             (acc_cheddar(), U128(ONE_CHEDDAR / 10))
@@ -864,7 +850,7 @@ mod tests {
         assert!(ctr.get_available_players().is_empty());
     }
     #[test]
-    #[should_panic(expected="Mismatch tokens! Choosen tokens for opponent and you must be the same")]
+    #[should_panic(expected="Mismatch deposit token! Both players have to deposit the same token to play the game")]
     fn start_game_diff_tokens() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         whitelist_token(&mut ctr);
@@ -966,10 +952,10 @@ mod tests {
         let player_2 = game.next_player_account_id().clone();
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -996,8 +982,8 @@ mod tests {
         // tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 1);
         // print_tiles(&tiles);
 
-        let player_1_stats = ctr.get_stats(&opponent());
-        let player_2_stats = ctr.get_stats(&user());
+        let player_1_stats = ctr.get_stats(&user());
+        let player_2_stats = ctr.get_stats(&&opponent());
         println!("{:#?}", player_1_stats);
         println!("{:#?}", player_2_stats);
         assert!(
@@ -1049,10 +1035,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1155,10 +1141,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1213,10 +1199,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1529,10 +1515,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1591,10 +1577,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
