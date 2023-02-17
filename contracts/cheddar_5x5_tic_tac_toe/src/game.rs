@@ -22,7 +22,7 @@ pub struct GameDeposit {
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 pub struct Game {
     pub game_state: GameState,
-    pub players: Vec<Player>,
+    pub players: (Player, Player),
     pub current_piece: Piece,
     pub current_player_index: u8,
     pub reward: GameDeposit,
@@ -53,7 +53,7 @@ impl Game {
         let board = Board::new(game_id, &player_1, &player_2);
         let mut game = Game {
             game_state: GameState::NotStarted,
-            players: Vec::with_capacity(PLAYERS_NUM),
+            players: (player_1.clone(), player_2.clone()),
             current_piece: player_1.piece,
             // player_1 index is 0
             current_player_index: 0,
@@ -79,22 +79,22 @@ impl Game {
     /// set two players in `game.players`
     /// directly in order: [player_1, player_2]
     fn set_players(&mut self, player_1: Player, player_2: Player) {
-        self.players.push(player_1.clone());
-        self.players.push(player_2.clone());
+        self.players.0 = player_1.clone();
+        self.players.1 = player_2.clone();
 
-        assert_eq!(self.players[0], player_1.clone());
-        assert_eq!(self.players[1], player_2.clone());
+        assert_eq!(self.players.0, player_1.clone());
+        assert_eq!(self.players.1, player_2.clone());
 
         assert_eq!(
-            self.players[0].piece, self.board.current_piece,
+            self.players.0.piece, self.board.current_piece,
             "Invalid game settings: First player's Piece mismatched on Game <-> Board"
         );
         assert_ne!(
-            self.players[1].piece, self.board.current_piece,
+            self.players.1.piece, self.board.current_piece,
             "Invalid game settings: Second player's Piece mismatched on Game <-> Board"
         );
         assert_ne!(
-            self.players[0].piece, self.players[1].piece,
+            self.players.0.piece, self.players.1.piece,
             "Players cannot have equal Pieces"
         )
     }
@@ -109,10 +109,10 @@ impl Game {
     }
 
     pub fn get_player_acc_by_piece(&self, piece: Piece) -> Option<&AccountId> {
-        if &piece == &self.players[0].piece {
-            Some(&self.players[0].account_id)
-        } else if &piece == &self.players[1].piece {
-            Some(&self.players[1].account_id)
+        if &piece == &self.players.0.piece {
+            Some(&self.players.0.account_id)
+        } else if &piece == &self.players.1.piece {
+            Some(&self.players.1.account_id)
         } else {
             panic!("No account with associated piece {:?}", piece)
         }
@@ -126,13 +126,17 @@ impl Game {
     }
 
     pub fn current_player_account_id(&self) -> AccountId {
-        let index = self.current_player_index as usize;
-        self.players[index].account_id.clone()
+        return match self.current_player_index {
+            0 => self.players.0.account_id.clone(),
+            _ => self.players.1.account_id.clone() 
+        };
     }
 
     pub fn next_player_account_id(&self) -> AccountId {
-        let index = self.current_player_index as usize;
-        self.players[1 - index].account_id.clone()
+        return match self.current_player_index {
+            1 => self.players.0.account_id.clone(),
+            _ => self.players.1.account_id.clone() 
+        };
     }
 
     pub fn contains_player_account_id(&self, account_id: &AccountId) -> bool {

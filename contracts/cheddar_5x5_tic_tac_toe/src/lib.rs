@@ -952,10 +952,10 @@ mod tests {
         let player_2 = game.next_player_account_id().clone();
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1035,10 +1035,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1141,10 +1141,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1199,10 +1199,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1515,10 +1515,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1577,10 +1577,10 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players[0].piece, game.players[1].piece);
-        assert_eq!(player_1, game.players[0].account_id);
-        assert_eq!(player_2, game.players[1].account_id);
-        assert_eq!(game.board.current_piece, game.players[0].piece);
+        assert_ne!(game.players.0.piece, game.players.1.piece);
+        assert_eq!(player_1, game.players.0.account_id);
+        assert_eq!(player_2, game.players.1.account_id);
+        assert_eq!(game.board.current_piece, game.players.0.piece);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
