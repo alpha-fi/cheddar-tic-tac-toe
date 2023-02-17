@@ -119,10 +119,7 @@ impl Game {
     }
 
     pub fn get_player_accounts(&self) -> (AccountId, AccountId) {
-        (
-            self.current_player_account_id(),
-            self.next_player_account_id(),
-        )
+        (self.players.0.account_id.clone(), self.players.1.account_id.clone())
     }
 
     pub fn current_player_account_id(&self) -> AccountId {
@@ -139,14 +136,8 @@ impl Game {
         };
     }
 
-    pub fn contains_player_account_id(&self, account_id: &AccountId) -> bool {
-        if &self.current_player_account_id() == account_id
-            || &self.next_player_account_id() == account_id
-        {
-            true
-        } else {
-            false
-        }
+    pub fn contains_player_account_id(&self, user: &AccountId) -> bool {
+        self.players.0.account_id == *user || self.players.1.account_id == *user
     }
     pub fn reward(&self) -> GameDeposit {
         self.reward.clone()
@@ -160,7 +151,7 @@ impl Game {
         }
     }
 
-    pub fn claim_timeout_win(&self, player: &AccountId) -> bool {
+    pub fn claim_timeout_win(&self, player: AccountId) -> bool {
         //1. Check if the game is still going
         assert_eq!(
             self.game_state,
@@ -169,7 +160,7 @@ impl Game {
         );
         //2. Check if opponets move
         assert_ne!(
-            *player,
+            player,
             self.current_player_account_id(),
             "Can't claim timeout win if it's your turn"
         );
