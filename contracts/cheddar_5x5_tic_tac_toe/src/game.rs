@@ -22,7 +22,7 @@ pub struct GameDeposit {
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
 pub struct Game {
     pub game_state: GameState,
-    pub players: (Player, Player),
+    pub players: (AccountId, AccountId),
     pub current_piece: Piece,
     pub current_player_index: u8,
     pub reward: GameDeposit,
@@ -49,12 +49,11 @@ impl Game {
             "Player 1 and Player 2 have the same AccountId: @{}",
             &player_1
         );
-        let (player_1, player_2) = Game::create_players(player_1, player_2);
-        let board = Board::new(game_id, &player_1, &player_2);
+        let board = Board::new(game_id);
         let mut game = Game {
             game_state: GameState::NotStarted,
             players: (player_1.clone(), player_2.clone()),
-            current_piece: player_1.piece,
+            current_piece: Piece::O,
             // player_1 index is 0
             current_player_index: 0,
             reward,
@@ -67,18 +66,9 @@ impl Game {
         game.set_players(player_1, player_2);
         game
     }
-    /// creates random piece for player1 and `other()` one for player2
-    fn create_players(account_id_1: AccountId, account_id_2: AccountId) -> (Player, Player) {
-        let piece_1 = Piece::random();
-        let piece_2 = piece_1.other();
-        (
-            Player::new(piece_1, account_id_1),
-            Player::new(piece_2, account_id_2),
-        )
-    }
     /// set two players in `game.players`
     /// directly in order: [player_1, player_2]
-    fn set_players(&mut self, player_1: Player, player_2: Player) {
+    fn set_players(&mut self, player_1: AccountId, player_2: AccountId) {
         self.players.0 = player_1.clone();
         self.players.1 = player_2.clone();
 
@@ -86,17 +76,13 @@ impl Game {
         assert_eq!(self.players.1, player_2.clone());
 
         assert_eq!(
-            self.players.0.piece, self.board.current_piece,
+            Piece::O, self.board.current_piece,
             "Invalid game settings: First player's Piece mismatched on Game <-> Board"
         );
         assert_ne!(
-            self.players.1.piece, self.board.current_piece,
+            Piece::X, self.board.current_piece,
             "Invalid game settings: Second player's Piece mismatched on Game <-> Board"
         );
-        assert_ne!(
-            self.players.0.piece, self.players.1.piece,
-            "Players cannot have equal Pieces"
-        )
     }
 
     pub fn change_state(&mut self, new_state: GameState) {
@@ -109,35 +95,42 @@ impl Game {
     }
 
     pub fn get_player_acc_by_piece(&self, piece: Piece) -> Option<&AccountId> {
-        if &piece == &self.players.0.piece {
-            Some(&self.players.0.account_id)
-        } else if &piece == &self.players.1.piece {
-            Some(&self.players.1.account_id)
+        if piece == Piece::O {
+            Some(&self.players.0)
+        } else if piece == Piece::X {
+            Some(&self.players.1)
         } else {
             panic!("No account with associated piece {:?}", piece)
         }
     }
 
     pub fn get_player_accounts(&self) -> (AccountId, AccountId) {
-        (self.players.0.account_id.clone(), self.players.1.account_id.clone())
+        (self.players.0.clone(), self.players.1.clone())
     }
 
     pub fn current_player_account_id(&self) -> AccountId {
         return match self.current_player_index {
-            0 => self.players.0.account_id.clone(),
-            _ => self.players.1.account_id.clone() 
+            0 => self.players.0.clone(),
+            _ => self.players.1.clone()
+        };
+    }
+
+    pub fn player_piece(index: u8) -> Piece {
+        return match index {
+            0 => Piece::O,
+            _ => Piece::X
         };
     }
 
     pub fn next_player_account_id(&self) -> AccountId {
         return match self.current_player_index {
-            1 => self.players.0.account_id.clone(),
-            _ => self.players.1.account_id.clone() 
+            1 => self.players.0.clone(),
+            _ => self.players.1.clone()
         };
     }
 
     pub fn contains_player_account_id(&self, user: &AccountId) -> bool {
-        self.players.0.account_id == *user || self.players.1.account_id == *user
+        self.players.0 == *user || self.players.1 == *user
     }
     pub fn reward(&self) -> GameDeposit {
         self.reward.clone()

@@ -27,7 +27,7 @@ pub struct GameView {
     pub player1: AccountId,
     pub player2: AccountId,
     pub game_status: GameState,
-    pub current_player: Player,
+    pub current_player: AccountId,
     pub reward: GameDeposit,
     pub tiles: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE],
     /* * */
@@ -71,7 +71,7 @@ impl From<&Game> for RangedPlayersView {
 impl From<&Game> for GameView {
     fn from(g: &Game) -> Self {
         let (player1, player2) = g.get_player_accounts();
-        let current_player: Player = match g.current_player_index {
+        let current_player: AccountId = match g.current_player_index {
             0 => g.players.0.clone(),
             _ => g.players.1.clone(),
         };
