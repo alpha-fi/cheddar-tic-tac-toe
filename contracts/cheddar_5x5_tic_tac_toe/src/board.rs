@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 
-use crate::*;
+use crate::{*, views::Tiles};
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
@@ -26,7 +26,7 @@ pub enum MoveError {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
 #[serde(crate = "near_sdk::serde")]
 pub struct Coords {
     pub x: u8,
@@ -214,34 +214,16 @@ impl Board {
         }
     }
 
-    pub fn get_vector(&self) -> [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] {
-        let mut local_vector: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] =
-            Default::default();
-
-        // TODO:
-        // + don't save matrix in the state. Intstead save two lists:
-        //   (list of coords taken by X, list of coords taken by O)
-        // + same for the UI query / view
-
-        // let mut o_coords = Vec::new();
-        // let mut x_coords = Vec::new();
-        // for (c, p) in self.tiles.iter() {
-        //     match p {
-        //         Piece::O => o_coords.append(c),
-        //         Piece::X => x_coords.append(c),
-        //     }
-        // }
-        // return (o_coords, x_coords)
-
-        for x in 0..=BOARD_SIZE - 1 {
-            for y in 0..=BOARD_SIZE - 1 {
-                local_vector[y as usize][x as usize] = self.tiles.get(&Coords {
-                    x: x as u8,
-                    y: y as u8,
-                });
+    pub fn get_tiles(&self) -> Tiles {
+        let mut o_coords = Vec::new();
+        let mut x_coords = Vec::new();
+        for (c, p) in self.tiles.iter() {
+            match p {
+                Piece::O => o_coords.push(c),
+                Piece::X => x_coords.push(c),
             }
         }
-        return local_vector;
+        return Tiles {o_coords, x_coords}
     }
 }
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -514,31 +496,29 @@ mod test {
         assert_eq!(result, true); 
     }
     #[test]
-    fn test_get_vector() {
+    fn test_get_tiles() {
         let piece_2 = Piece::X;
         let game_id: u64 = 1;
         // initialize the board
         let mut board = Board::new(game_id);
 
         // insert few testing values
-        // _ _ _ _ O
-        // _ _ _ O _
-        // _ _ O _ _
-        // _ O _ _ _
+        // _ _ _ _ X
+        // _ _ _ X _
+        // _ _ X _ _
+        // _ X _ _ _
         // _ _ _ _ _
         board.tiles.insert(&Coords { x: 4, y: 0 }, &piece_2);
         board.tiles.insert(&Coords { x: 3, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 2 }, &piece_2);
         board.tiles.insert(&Coords { x: 1, y: 3 }, &piece_2);
-        let vector = board.get_vector();
-        assert_eq!(vector.len(), BOARD_SIZE);
-        assert_eq!(vector[0].len(), BOARD_SIZE);
-        assert_eq!(vector[0][4], Some(piece_2));
-        assert_eq!(vector[1][3], Some(piece_2));
-        assert_eq!(vector[2][2], Some(piece_2));
-        assert_eq!(vector[3][1], Some(piece_2));
-        assert_eq!(vector[0][0], None);
-        assert_eq!(vector[4][4], None);
+        let vector = board.get_tiles();
+        assert_eq!(vector.o_coords.len(), 0);
+        assert_eq!(vector.x_coords.len(), 4);
+        assert_eq!(vector.x_coords[0], Coords { x: 4, y: 0 });
+        assert_eq!(vector.x_coords[1], Coords { x: 3, y: 1 });
+        assert_eq!(vector.x_coords[2], Coords { x: 2, y: 2 });
+        assert_eq!(vector.x_coords[3], Coords { x: 1, y: 3 });
     }
 }
 
