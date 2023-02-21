@@ -8,6 +8,8 @@ X ▢ ▢ ▢ ▢
 
 ## Cheddar 5X5 TIC-TAC-TOE Game
 
+### Who starts th game?
+The starting player is selected at the beginning of the game using NEAR random mechanism. The player that stards will always have `O` piece and the other `X`.
 
 #### setup environment
 ```sh

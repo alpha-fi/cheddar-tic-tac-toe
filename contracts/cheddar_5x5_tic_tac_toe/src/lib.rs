@@ -254,7 +254,7 @@ impl Contract {
     }
 
     // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
-    pub fn make_move(&mut self, game_id: &GameId, row: usize, col: usize) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
+    pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
@@ -263,16 +263,15 @@ impl Contract {
 
         assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "not your turn");
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
-
-        match game.board.check_move(row, col) {
+        match game.board.check_move(&coords) {
             Ok(_) => {
                 // fill board tile with current player piece
-                game.board.tiles.insert(&Coords {y: row as u8, x: col as u8}, &game.current_piece);
+                game.board.tiles.insert(&coords, &game.current_piece);
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
-                game.board.update_winner(Coords {y: row as u8, x: col as u8});
+                game.board.update_winner(&coords);
 
                 if let Some(winner) = game.board.winner.clone() {
                     // change game state to Finished
@@ -611,13 +610,13 @@ mod tests {
         ctr: &mut Contract,
         user: &AccountId,
         game_id: &GameId,
-        row: usize,
-        col: usize
+        row: u8,
+        col: u8
     ) -> [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] {
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .build());
-        ctr.make_move(game_id, row, col)
+        ctr.make_move(game_id, Coords{y: row, x: col})
     }
 
     fn stop_game(
@@ -952,10 +951,9 @@ mod tests {
         let player_2 = game.next_player_account_id().clone();
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players.0.piece, game.players.1.piece);
-        assert_eq!(player_1, game.players.0.account_id);
-        assert_eq!(player_2, game.players.1.account_id);
-        assert_eq!(game.board.current_piece, game.players.0.piece);
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1035,10 +1033,9 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players.0.piece, game.players.1.piece);
-        assert_eq!(player_1, game.players.0.account_id);
-        assert_eq!(player_2, game.players.1.account_id);
-        assert_eq!(game.board.current_piece, game.players.0.piece);
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1141,10 +1138,9 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players.0.piece, game.players.1.piece);
-        assert_eq!(player_1, game.players.0.account_id);
-        assert_eq!(player_2, game.players.1.account_id);
-        assert_eq!(game.board.current_piece, game.players.0.piece);
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1199,10 +1195,9 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players.0.piece, game.players.1.piece);
-        assert_eq!(player_1, game.players.0.account_id);
-        assert_eq!(player_2, game.players.1.account_id);
-        assert_eq!(game.board.current_piece, game.players.0.piece);
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1515,10 +1510,9 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players.0.piece, game.players.1.piece);
-        assert_eq!(player_1, game.players.0.account_id);
-        assert_eq!(player_2, game.players.1.account_id);
-        assert_eq!(game.board.current_piece, game.players.0.piece);
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1577,10 +1571,9 @@ mod tests {
         println!("( {} , {} )", player_1, player_2);
 
         assert_ne!(player_1, game.next_player_account_id());
-        assert_ne!(game.players.0.piece, game.players.1.piece);
-        assert_eq!(player_1, game.players.0.account_id);
-        assert_eq!(player_2, game.players.1.account_id);
-        assert_eq!(game.board.current_piece, game.players.0.piece);
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1598,5 +1591,10 @@ mod tests {
         // player2 turn still have time left to make a move -> dont change anything just log that the claim is not valid yet 
         ctr.claim_timeout_win(&game_id);
         assert!(game.game_state == GameState::Active);
+    }
+    #[test] 
+    fn test_player_piece_binding() {
+        let board = Board::new(1);
+        assert_eq!(board.current_piece, Piece::O);
     }
 }

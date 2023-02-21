@@ -22,20 +22,3 @@ impl Piece {
         }
     }
 }
-
-/// Player struct with X/O and `AccountId`
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(crate = "near_sdk::serde")]
-pub struct Player {
-	pub piece : Piece,
-    pub account_id: AccountId
-}
-
-impl Player {
-    pub fn new(piece: Piece, account_id: AccountId) -> Self {
-        Self { 
-            piece, 
-            account_id
-        }
-    }
-}
