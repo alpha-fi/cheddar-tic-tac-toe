@@ -263,16 +263,15 @@ impl Contract {
 
         assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "not your turn");
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
-        let c = coords.clone();
-        match game.board.check_move(coords) {
+        match game.board.check_move(&coords) {
             Ok(_) => {
                 // fill board tile with current player piece
-                game.board.tiles.insert(&c, &game.current_piece);
+                game.board.tiles.insert(&coords, &game.current_piece);
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
-                game.board.update_winner(c);
+                game.board.update_winner(&coords);
 
                 if let Some(winner) = game.board.winner.clone() {
                     // change game state to Finished

@@ -71,7 +71,7 @@ impl Board {
         }
         Ok(())
     }
-    pub fn check_winner(&self, position: Coords) -> bool {
+    pub fn check_winner(&self, position: &Coords) -> bool {
         let expected = Some(self.current_piece.other());
         let mut c  = position.clone();
         let mut counter = 1;
@@ -198,7 +198,7 @@ impl Board {
     /// that the last move was made in.
     /// To find a potential winner, we only need to check the row, column and (maybe) diagonal
     /// that the last move was made in.
-    pub fn update_winner(&mut self, coords: Coords) {
+    pub fn update_winner(&mut self, coords: &Coords) {
         if self.tiles.len() >= (BOARD_SIZE * BOARD_SIZE) as u64 {
             self.winner = Some(Winner::Tie);
             return;
@@ -261,7 +261,7 @@ mod test {
         let board = Board::new(game_id);
 
         // make move
-        let _ = board.check_move(Coords{x:0, y:0});
+        let _ = board.check_move(&Coords{x:0, y:0});
     }
     #[test]
     fn index_out_of_bound() {
@@ -270,7 +270,7 @@ mod test {
         let board = Board::new(game_id);
 
         // make move
-        let result = board.check_move(Coords {x: BOARD_SIZE as u8, y: BOARD_SIZE as u8});
+        let result = board.check_move(&Coords {x: BOARD_SIZE as u8, y: BOARD_SIZE as u8});
         assert_eq!(
             result,
             Err(MoveError::InvalidPosition {
@@ -289,7 +289,7 @@ mod test {
 
         // make move
         board.tiles.insert(&Coords { x: 0, y: 0 }, &piece_1);
-        let result = board.check_move(Coords{x:0, y:0});
+        let result = board.check_move(&Coords{x:0, y:0});
         assert_eq!(
             result,
             Err(MoveError::TileFilled {
@@ -322,7 +322,7 @@ mod test {
         board.tiles.insert(&Coords { x: 1, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 3, y: 1 }, &piece_2);
-        let result = board.check_winner(Coords { x: 4, y: 1 });
+        let result = board.check_winner(&Coords { x: 4, y: 1 });
         assert_eq!(result, true);
     }
     #[test]
@@ -342,7 +342,7 @@ mod test {
         board.tiles.insert(&Coords { x: 0, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 0, y: 2 }, &piece_2);
         board.tiles.insert(&Coords { x: 0, y: 3 }, &piece_2);
-        let result = board.check_winner(Coords { x: 0, y: 4 });
+        let result = board.check_winner(&Coords { x: 0, y: 4 });
         assert_eq!(result, true);
     }
     #[test]
@@ -363,7 +363,7 @@ mod test {
         board.tiles.insert(&Coords { x: 0, y: 2 }, &piece_2);
         board.tiles.insert(&Coords { x: 0, y: 3 }, &piece_2);
         board.tiles.insert(&Coords { x: 0, y: 4 }, &piece_2);
-        let result = board.check_winner(Coords { x: 0, y: 0 });
+        let result = board.check_winner(&Coords { x: 0, y: 0 });
         assert_eq!(result, true);
     }
     #[test]
@@ -384,7 +384,7 @@ mod test {
         board.tiles.insert(&Coords { x: 0, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 0, y: 3 }, &piece_2);
         board.tiles.insert(&Coords { x: 0, y: 4 }, &piece_2);
-        let result = board.check_winner(Coords { x: 0, y: 2 });
+        let result = board.check_winner(&Coords { x: 0, y: 2 });
         assert_eq!(result, true);
     }
     #[test]
@@ -405,7 +405,7 @@ mod test {
         board.tiles.insert(&Coords { x: 1, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 2 }, &piece_2);
         board.tiles.insert(&Coords { x: 3, y: 3 }, &piece_2);
-        let result = board.check_winner(Coords { x: 4, y: 4 });
+        let result = board.check_winner(&Coords { x: 4, y: 4 });
         assert_eq!(result, true);
     }
     #[test]
@@ -426,7 +426,7 @@ mod test {
         board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
         board.tiles.insert(&Coords { x: 3, y: 3}, &piece_2);
-        let result = board.check_winner(Coords{ x: 0, y: 0 });
+        let result = board.check_winner(&Coords{ x: 0, y: 0 });
         assert_eq!(result, true); 
     }
     #[test]
@@ -447,7 +447,7 @@ mod test {
         board.tiles.insert(&Coords { x: 1, y: 1}, &piece_2);
         board.tiles.insert(&Coords { x: 4, y: 4}, &piece_2);
         board.tiles.insert(&Coords { x: 3, y: 3}, &piece_2);
-        let result = board.check_winner(Coords{ x: 2, y: 2 });
+        let result = board.check_winner(&Coords{ x: 2, y: 2 });
         assert_eq!(result, true); 
     }
     #[test]
@@ -468,7 +468,7 @@ mod test {
         board.tiles.insert(&Coords { x: 3, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 2 }, &piece_2);
         board.tiles.insert(&Coords { x: 1, y: 3 }, &piece_2);
-        let result = board.check_winner(Coords { x: 0, y: 4 });
+        let result = board.check_winner(&Coords { x: 0, y: 4 });
         assert_eq!(result, true);
     }
     #[test]
@@ -489,7 +489,7 @@ mod test {
         board.tiles.insert(&Coords { x: 1, y: 3}, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
         board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
-        let result = board.check_winner(Coords{ x: 4, y: 0 });
+        let result = board.check_winner(&Coords{ x: 4, y: 0 });
         assert_eq!(result, true); 
     }
     #[test]
@@ -510,7 +510,7 @@ mod test {
         board.tiles.insert(&Coords { x: 3, y: 1}, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 2}, &piece_2);
         board.tiles.insert(&Coords { x: 0, y: 4}, &piece_2);
-        let result = board.check_winner(Coords{ x: 1, y: 3 });
+        let result = board.check_winner(&Coords{ x: 1, y: 3 });
         assert_eq!(result, true); 
     }
     #[test]
