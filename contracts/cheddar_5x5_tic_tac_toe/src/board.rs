@@ -54,7 +54,7 @@ impl Board {
             winner: None,
         }
     }
-    pub fn check_move(&self, coords: Coords) -> Result<(), MoveError> {
+    pub fn check_move(&self, coords: &Coords) -> Result<(), MoveError> {
         if self.winner.is_some() {
             return Err(MoveError::GameOver);
         }
