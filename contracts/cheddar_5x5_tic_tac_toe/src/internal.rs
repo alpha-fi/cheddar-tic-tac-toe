@@ -241,7 +241,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance,
             },
-            tiles: game.board.get_tiles(),
+            tiles: game.board.to_tiles(),
         };
         self.internal_store_game(game_id, &game_to_store);
         self.internal_stop_game(game_id);

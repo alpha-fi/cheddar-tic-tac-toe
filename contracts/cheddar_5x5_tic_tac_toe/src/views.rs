@@ -89,7 +89,7 @@ impl From<&Game> for GameView {
             game_status: g.game_state.clone(),
             current_player,
             reward: g.reward(),
-            tiles: g.board.get_tiles(),
+            tiles: g.board.to_tiles(),
             initiated_at_sec: nano_to_sec(g.initiated_at),
             last_turn_timestamp_sec: nano_to_sec(g.last_turn_timestamp),
             current_duration_sec: nano_to_sec(g.current_duration),
@@ -141,7 +141,7 @@ impl Contract {
 
     pub fn get_current_tiles(&self, game_id: &GameId) -> Tiles {
         let game = self.internal_get_game(game_id);
-        game.board.get_tiles()
+        game.board.to_tiles()
     }
 
     pub fn get_whitelisted_tokens(&self) -> Vec<(TokenContractId, U128)> {

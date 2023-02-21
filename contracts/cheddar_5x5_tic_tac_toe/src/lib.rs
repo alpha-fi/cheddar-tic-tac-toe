@@ -310,7 +310,7 @@ impl Contract {
                             token_id: game.reward().token_id,
                             balance
                         },
-                        tiles: game.board.get_tiles(),
+                        tiles: game.board.to_tiles(),
                     };
 
                     self.internal_store_game(game_id, &game_to_store);
@@ -343,10 +343,10 @@ impl Contract {
                     log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, cur_timestamp - game.initiated_at);
                     // looser - current player
                     self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                    return game.board.get_tiles();
+                    return game.board.to_tiles();
                 } else {
                     self.internal_update_game(game_id, &game);
-                    return game.board.get_tiles();
+                    return game.board.to_tiles();
                 }
             }
 
@@ -355,17 +355,17 @@ impl Contract {
                 log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, game.last_turn_timestamp - previous_turn_timestamp);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.get_tiles();
+                return game.board.to_tiles();
             };
 
             if game.current_duration <= self.max_game_duration {
                 self.internal_update_game(game_id, &game);
-                return game.board.get_tiles();
+                return game.board.to_tiles();
             } else {
                 log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.current_duration);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.get_tiles();
+                return game.board.to_tiles();
             }
         } else {
             panic!("Something wrong with game id: {} state", game_id)
@@ -403,7 +403,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            tiles: game.board.get_tiles(),
+            tiles: game.board.to_tiles(),
         };
 
         self.internal_store_game(game_id, &game_to_store);
@@ -453,7 +453,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            tiles: game.board.get_tiles(),
+            tiles: game.board.to_tiles(),
         };
 
         self.internal_store_game(game_id, &game_to_store);
@@ -478,7 +478,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            tiles: game.board.get_tiles(),
+            tiles: game.board.to_tiles(),
         };
         self.internal_store_game(game_id, &game_to_store);
     }
@@ -642,22 +642,22 @@ mod tests {
         // 1 x ▢ ▢
         // 2 ▢ ▢ o
         // 3 ▢ ▢ ▢
-        let mut local_vector: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] =
+        let mut matrix: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] =
             Default::default();
         for tile in tiles.x_coords.iter() {
-            local_vector[tile.y as usize][tile.x as usize] = Some(Piece::X);
+            matrix[tile.y as usize][tile.x as usize] = Some(Piece::X);
         }
         for tile in tiles.o_coords.iter() {
-            local_vector[tile.y as usize][tile.x as usize] = Some(Piece::O);
+            matrix[tile.y as usize][tile.x as usize] = Some(Piece::O);
         }
         print!("  ");
-        for j in 0..local_vector[0].len() as u8 {
+        for j in 0..matrix[0].len() as u8 {
             // `b'A'` produces the ASCII character code for the letter A (i.e. 65)
             print!(" {}", (b'A' + j) as char);
         }
         // This prints the final newline after the row of column letters
         println!();
-        for (i, row) in local_vector.iter().enumerate() {
+        for (i, row) in matrix.iter().enumerate() {
             // We print the row number with a space in front of it
             print!(" {}", i + 1);
             for tile in row {
@@ -966,27 +966,17 @@ mod tests {
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 4);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 3);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 3);
         print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
         print_tiles(&tiles);
-        // tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 1);
-        // print_tiles(&tiles);
 
         let player_1_stats = ctr.get_stats(&user());
         let player_2_stats = ctr.get_stats(&&opponent());
@@ -1048,51 +1038,28 @@ mod tests {
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 3);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 4);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 3);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 4);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 3);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 4);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 3);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 4);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 3);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 4);
         print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 2);
@@ -1110,10 +1077,6 @@ mod tests {
         assert!(
             player_1_stats.total_reward == player_2_stats.total_reward
         ); 
-        // assert_eq!(
-        //     ctr.reward_computed,
-        //     (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) / 2 
-        // )
     }
     #[test]
     #[should_panic(expected="Too early to stop the game")]
@@ -1153,17 +1116,11 @@ mod tests {
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
         print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
@@ -1210,19 +1167,12 @@ mod tests {
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
         print_tiles(&tiles);
         stop_game(&mut ctx, &mut ctr, &player_1, &game_id, 601);
@@ -1525,9 +1475,7 @@ mod tests {
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
         print_tiles(&tiles);
         testing_env!(ctx
@@ -1586,9 +1534,7 @@ mod tests {
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         let mut tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        print_tiles(&tiles);
         tiles = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
         print_tiles(&tiles);
         testing_env!(ctx

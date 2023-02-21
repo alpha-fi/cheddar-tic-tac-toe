@@ -214,7 +214,7 @@ impl Board {
         }
     }
 
-    pub fn get_tiles(&self) -> Tiles {
+    pub fn to_tiles(&self) -> Tiles {
         let mut o_coords = Vec::new();
         let mut x_coords = Vec::new();
         for (c, p) in self.tiles.iter() {
@@ -496,7 +496,7 @@ mod test {
         assert_eq!(result, true); 
     }
     #[test]
-    fn test_get_tiles() {
+    fn test_to_tiles() {
         let piece_2 = Piece::X;
         let game_id: u64 = 1;
         // initialize the board
@@ -512,7 +512,7 @@ mod test {
         board.tiles.insert(&Coords { x: 3, y: 1 }, &piece_2);
         board.tiles.insert(&Coords { x: 2, y: 2 }, &piece_2);
         board.tiles.insert(&Coords { x: 1, y: 3 }, &piece_2);
-        let vector = board.get_tiles();
+        let vector = board.to_tiles();
         assert_eq!(vector.o_coords.len(), 0);
         assert_eq!(vector.x_coords.len(), 4);
         assert_eq!(vector.x_coords[0], Coords { x: 4, y: 0 });
