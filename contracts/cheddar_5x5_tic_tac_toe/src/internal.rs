@@ -10,15 +10,15 @@ impl Contract {
             .insert(&token_id, &min_deposit.0)
             .is_none());
     }
-    /// set accuracy, service fees need to be in range [0.1..10%]
-    /// also referrer_fee need to be [0..50%] from service fee
+
     #[private]
-    pub fn set_service_fee(&mut self, service_fee: u32, referrer_fee: u32) -> bool {
+    pub fn set_service_fee(&mut self, service_fee: u16, referrer_fee: u16) -> bool {
         validate_fee(service_fee, referrer_fee);
-        self.service_fee_percentage = service_fee;
-        self.referrer_ratio = referrer_fee;
+        self.service_fee = service_fee;
+        self.referrer_fee_share = referrer_fee;
         true
     }
+
     /// set accuracy, max_duration need to be in range [100..3600] seconds
     #[private]
     pub fn set_max_duration(&mut self, max_duration: u32) -> bool {
@@ -116,7 +116,7 @@ impl Contract {
             .0
             .checked_div(BASIS_P.into())
             .unwrap_or(0)
-            .checked_mul(self.service_fee_percentage as u128)
+            .checked_mul(self.service_fee as u128)
             .unwrap_or(0);
         assert!(fees_amount > 0, "Incorrect fees computing");
 
@@ -170,7 +170,7 @@ impl Contract {
             let computed_referrer_fee = service_fee
                 .checked_div(BASIS_P.into())
                 .unwrap_or(0)
-                .checked_mul(self.referrer_ratio as u128)
+                .checked_mul(self.referrer_fee_share as u128)
                 .unwrap_or(0);
 
             if computed_referrer_fee > 0 {
