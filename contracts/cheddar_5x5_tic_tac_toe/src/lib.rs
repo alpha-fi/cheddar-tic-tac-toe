@@ -314,7 +314,12 @@ impl Contract {
                     };
 
                     self.internal_store_game(game_id, &game_to_store);
-                    self.internal_stop_game(game_id);
+                    assert_eq!(
+                        game.game_state,
+                        GameState::Finished,
+                        "Cannot stop. Game in progress"
+                    );
+                    self.games.remove(game_id);
                     
                     return game.board.winner;
                 };
@@ -407,7 +412,12 @@ impl Contract {
         };
 
         self.internal_store_game(game_id, &game_to_store);
-        self.internal_stop_game(game_id);
+        assert_eq!(
+            game.game_state,
+            GameState::Finished,
+            "Cannot stop. Game in progress"
+        );
+        self.games.remove(game_id);
     }
 
     // TODO: remove this
@@ -457,7 +467,12 @@ impl Contract {
         };
 
         self.internal_store_game(game_id, &game_to_store);
-        self.internal_stop_game(game_id);
+        assert_eq!(
+            game.game_state,
+            GameState::Finished,
+            "Cannot stop. Game in progress"
+        );
+        self.games.remove(game_id);
     }
 
     pub fn claim_timeout_win(&mut self, game_id: &GameId) {
