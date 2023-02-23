@@ -22,7 +22,7 @@ impl Contract {
     /// set accuracy, max_duration need to be in range [100..3600] seconds
     #[private]
     pub fn set_max_duration(&mut self, max_duration: u32) -> bool {
-        validate_game_duration(max_duration);
+        validate_game_duration(max_duration as u64);
         self.max_game_duration = sec_to_nano(max_duration);
         self.max_turn_duration = self.max_game_duration / MAX_NUM_TURNS;
         true
