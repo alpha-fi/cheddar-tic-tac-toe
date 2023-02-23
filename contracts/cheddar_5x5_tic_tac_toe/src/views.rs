@@ -22,8 +22,7 @@ pub struct Tiles {
 pub struct ContractParams {
     pub games: HashMap<GameId, GameView>,
     pub available_players: Vec<(AccountId, GameConfigView)>,
-    /* * */
-    pub service_fee_percentage: u32,
+    pub service_fee: u16,
     pub max_game_duration: u32,
     pub last_update_timestamp_sec: u32,
 }
@@ -110,7 +109,7 @@ impl Contract {
         ContractParams {
             games,
             available_players,
-            service_fee_percentage: self.service_fee_percentage,
+            service_fee: self.service_fee,
             max_game_duration: nano_to_sec(self.max_game_duration),
             last_update_timestamp_sec: nano_to_sec(self.last_update_timestamp),
         }

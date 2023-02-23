@@ -53,6 +53,7 @@ pub (crate) type MinDeposit = Balance;
 #[near_bindgen]
 #[derive(BorshSerialize, BorshDeserialize, PanicOnDefault)]
 pub struct Contract {
+    cheddar: AccountId,
     /// Allowed game reward tokens as `TokenContractId` : `MinDeposit`
     whitelisted_tokens: UnorderedMap<TokenContractId, MinDeposit>,
     games: UnorderedMap<GameId, Game>,
@@ -62,11 +63,11 @@ pub struct Contract {
     /// `GameId` which will be set for next created `Game`
     next_game_id: GameId,
     /// service fee percentage in BASIS_P (see `config.rs`)
-    service_fee_percentage: u32,
+    service_fee: u16,
     /// max expected game duration in nanoseconds (see `config.rs`)
     max_game_duration: Duration,
     /// referrer fee percentage from service_fee_percentage in BASIS_P (see `config.rs`)
-    referrer_ratio: u32,
+    referrer_fee_share: u16,
     /// system updates
     pub last_update_timestamp: u64,
     /// max expected turn duration in nanoseconds (max_game_duration / max possible turns num)
@@ -79,46 +80,26 @@ pub struct Contract {
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(config: Option<Config>) -> Self {
-        let (
-            service_fee_percentage, 
-            max_game_duration,
-            referrer_ratio,
-            max_stored_games
-        ) = if let Some(config) = config {
-            config.assert_valid();
-            (
-                config.service_fee_percentage,
-                sec_to_nano(config.max_game_duration_sec),
-                config.referrer_ratio,
-                config.max_stored_games
-            )
-        } else {
-            // default config
-            (
-                // 10% total fees - 9.5% to referrer, 0.5% to cheddar distribution
-                MAX_FEES,
-                // 1 hour for max_game_duration will be set
-                // also 400 sec will be max turn duration (max_game_duration / MAX_TURNS_NUM)
-                sec_to_nano(60 * 60),
-                // 95% refferer fees from 10% total fees
-                9500,
-                // 50 last games will be stored
-                50
-            )
-        };
+    pub fn new(cheddar: AccountId, config: Option<Config>) -> Self {
+        let config = config.unwrap_or(Config {
+            fee: MAX_FEES,
+            referrer_fee_share: 2000, // 20%
+            max_game_duration_sec: sec_to_nano(60 * 60), // 1h
+            max_stored_games:    50
+        });
         Self {
+            cheddar,
             whitelisted_tokens: UnorderedMap::new(StorageKey::WhitelistedTokens),
             games: UnorderedMap::new(StorageKey::Games),
             available_players: UnorderedMap::new(StorageKey::Players),
             stats: UnorderedMap::new(StorageKey::Stats),
             next_game_id: 0,
-            service_fee_percentage,
-            max_game_duration,
-            referrer_ratio,
+            service_fee: config.fee,
+            max_game_duration: config.max_game_duration_sec,
+            referrer_fee_share: config.referrer_fee_share,
             last_update_timestamp: 0,
-            max_turn_duration: max_game_duration / MAX_NUM_TURNS,
-            max_stored_games,
+            max_turn_duration: config.max_game_duration_sec / MAX_NUM_TURNS,
+            max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames)
         }
     }
@@ -538,8 +519,8 @@ mod tests {
             None
         } else {
             Some(Config {
-                service_fee_percentage: service_fee_percentage.unwrap(),
-                referrer_ratio: referrer_fee.unwrap_or(BASIS_P / 2),
+                fee: service_fee_percentage.unwrap(),
+                referrer_fee_share: referrer_fee.unwrap_or(BASIS_P / 2),
                 max_game_duration_sec: max_game_duration_sec.unwrap(),
                 max_stored_games: 50u8
             })
@@ -657,7 +638,7 @@ mod tests {
         // 1 x ▢ ▢
         // 2 ▢ ▢ o
         // 3 ▢ ▢ ▢
-        let mut matrix: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] =
+        let mut matrix: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] =
             Default::default();
         for tile in tiles.x_coords.iter() {
             matrix[tile.y as usize][tile.x as usize] = Some(Piece::X);
@@ -936,13 +917,13 @@ mod tests {
             player_1_stats.victories_num == 0 && player_2_stats.victories_num == 1
         );
         assert_eq!(
-            player_2_stats.total_reward, Vec::from([(acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * MIN_FEES as u128)))]) 
+            player_2_stats.total_reward, Vec::from([(acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * 10)))])
         );
         assert!(player_1_stats.total_reward.is_empty());
     }
     #[test]
     fn test_game_basics() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(10), None,  Some(MIN_GAME_DURATION_SEC));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
             (acc_cheddar(), (ONE_CHEDDAR / 10).into())
@@ -997,7 +978,7 @@ mod tests {
         );   
         assert_eq!(
             player_2_stats.total_reward.clone(), Vec::from([
-                (acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* MIN_FEES as u128)))
+                (acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
             ])
         );
         assert!(player_1_stats.total_reward.is_empty());
@@ -1493,14 +1474,14 @@ mod tests {
             Vec::from([
                 (
                     acc_cheddar(),
-                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
+                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * 10 ))
                 )
             ])
         )
     }
     #[test]
     fn test_claim_timeout_win_when_no_timeout() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(10), None,  Some(MIN_GAME_DURATION_SEC));
         whitelist_token(&mut ctr);
         assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
             (acc_cheddar(), (ONE_CHEDDAR / 10).into())
