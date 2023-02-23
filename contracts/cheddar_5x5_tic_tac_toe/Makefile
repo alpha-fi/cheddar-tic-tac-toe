@@ -20,7 +20,7 @@ test-unit:
 CTR_T=tic-tac-toe-5-v1.cheddar.testnet
 CHEDDAR=token-v3.cheddar.testnet
 deploy-testnet:
-	@NEAR_ENV=testnet near deploy ${CTR_T} ../../cheddar_big_tic_tac_toe.wasm \
+	@NEAR_ENV=testnet near deploy ${CTR_T} ../../res/cheddar_big_tic_tac_toe.wasm \
 	  "new" '{"cheddar": "'${CHEDDAR}'"}'
 
 deploy-dev:
