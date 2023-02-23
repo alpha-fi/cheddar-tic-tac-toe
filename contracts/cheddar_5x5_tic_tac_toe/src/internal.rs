@@ -244,7 +244,12 @@ impl Contract {
             tiles: game.board.to_tiles(),
         };
         self.internal_store_game(game_id, &game_to_store);
-        self.internal_stop_game(game_id);
+        assert_eq!(
+            game.game_state,
+            GameState::Finished,
+            "Cannot stop. Game in progress"
+        );
+        self.games.remove(game_id);
     }
 
     pub(crate) fn is_account_exists(&self, account_id: &AccountId) -> bool {
@@ -291,16 +296,6 @@ impl Contract {
 
     pub(crate) fn internal_get_game(&self, game_id: &GameId) -> Game {
         self.games.get(game_id).expect("Game not found")
-    }
-
-    pub(crate) fn internal_stop_game(&mut self, game_id: &GameId) {
-        let game = self.games.get(game_id).expect("Game not found");
-        assert_eq!(
-            game.game_state,
-            GameState::Finished,
-            "Cannot stop. Game in progress"
-        );
-        self.games.remove(game_id);
     }
 
     pub(crate) fn internal_update_game(&mut self, game_id: &GameId, game: &Game) {
