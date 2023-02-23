@@ -9,47 +9,26 @@ X ▢ ▢ ▢ ▢
 ## Cheddar 5X5 TIC-TAC-TOE Game
 
 ### Who starts th game?
+
 The starting player is selected at the beginning of the game using NEAR random mechanism. The player that stards will always have `O` piece and the other `X`.
 
 #### setup environment
+
 ```sh
-export TICTACTOE=
+export TICTACTOE=<account-where-we-deploy>
 export PLAYER1=first.near
 export PLAYER2=second.near
 export ONE_TOKEN_DEPOSIT=1000000000000000000000000
 export ONE_NEAR=1000000000000000000000000
 ```
-#### #[init]
-```rust
-"config" : {
-    /// Service fee in BASIS_P E.g 10% => 1000; 2% => 200
-    pub service_fee_percentage: u32,
-    /// Referrer ratio to fees distribution from `service_fee_percentage`
-    /// in BASIS_P. E.g if `service_fee_percentage` = 1000 (10%)
-    /// `referrer_ratio` = 5000 means that 5% from total game reward
-    /// comes to protocol and 5% to referrer
-    pub referrer_ratio: u32,
-    /// `max_game_duration_sec` in seconds (0..3600) is required 
-    pub max_game_duration_sec: u32
-    /// max number of stored games into contract
-    pub max_stored_games: u8
-}
-```
-```rust
-/// 100 minutes - max game duration
-/// 2% - service fee
-/// 50% from service fee (1%) goes to winner's refferers
-near call $TICTACTOE new '{
-    "config": {
-        "service_fee_percentage": 200,
-        "referrer_ratio": 5000,
-        "max_game_duration_sec": 6000
-    }
-}' --accountId $TICTACTOE
-```
+
+#### Setup
+
+See Makefile `deploy-testnet` job and `config.rs` for available config options.
 
 #### whitelist token(private) and register contract into token
-```rust
+
+```sh
 near call $TICTACTOE set_max_duration '{"max_duration": 3600}' --accountId $TICTACTOE
 near call $TICTACTOE whitelist_token '{
     "token_id" : "token-v3.cheddar.testnet",
@@ -60,12 +39,16 @@ near view $TICTACTOE get_whitelisted_tokens ''
 ```
 
 #### make available (no referrer, no opponent)
+
 NEAR
-```rust
+
+```sh
 near call $TICTACTOE make_available '{}' --accountId $PLAYER1 --amount 1 --gas=300000000000000
 ```
+
 FT
-```rust
+
+```sh
 near call token-v3.cheddar.testnet ft_transfer_call '{
     "receiver_id":"'$TICTACTOE'",
     "amount":"'$ONE_TOKEN_DEPOSIT'",
@@ -74,33 +57,40 @@ near call token-v3.cheddar.testnet ft_transfer_call '{
 ```
 
 #### make available (with referrer)
+
 NEAR
-```rust
+
+```sh
 near call $TICTACTOE make_available '{
     "game_config": {
         "referrer_id": "'$PLAYER1'"
     }
 }' --accountId participant_1.testnet --depositYocto=$ONE_NEAR --gas=300000000000000
 ```
+
 FT
-```rust
+
+```sh
 near call token-v3.cheddar.testnet ft_transfer_call '{
     "receiver_id":"'$TICTACTOE'",
     "amount":"'$ONE_TOKEN_DEPOSIT'",
     "msg": "{\"referrer_id\":\"'$PLAYER1'\"}"
 }' --accountId $PLAYER2 --depositYocto 1 --gas=300000000000000
 ```
+
 #### make unavailable
-```rust
+
+```sh
 near call $TICTACTOE make_unavailable '' --accountId $PLAYER1 --depositYocto=1 --gas=300000000000000
 ```
 
-```rust
+```sh
 near view $TICTACTOE get_available_players ''
 ```
 
 #### start game
-```rust
+
+```sh
 near call $TICTACTOE start_game '{"player_2_id": "'$PLAYER1'"}' --accountId $PLAYER2
 near view $TICTACTOE get_active_games ''
 near view $TICTACTOE get_last_games ''
@@ -108,7 +98,8 @@ near view $TICTACTOE get_last_games ''
 ```
 
 #### play
-```rust
+
+```sh
 /// view order for players to move
 near view $TICTACTOE get_contract_params ''
 
@@ -126,22 +117,27 @@ near call $TICTACTOE make_move '{"game_id": 0, "row": 3, "col": 3}' --accountId 
 near view $TICTACTOE get_stats '{"account_id": "'$PLAYER1'"}'
 near view $TICTACTOE get_stats '{"account_id": "'$PLAYER2'"}'
 ```
+
 #### give-up
-```rust
+
+```sh
 near call $TICTACTOE give_up '{"game_id": 0}' --accountId $USER_ID --depositYocto 1 --gas=300000000000000
 near call $TICTACTOE stop_game '{"game_id": 0}' --accountId $USER_ID --gas=300000000000000
 ```
 
 #### Claim timeout win
+
 When your opponent doesnt to respond for 5 or more minutes you are able to claim a timeout win. The win reward will be transferred to you and the game will end
-```rust
+
+```sh
 near call $TICTACTOE claim_timeout_win '{"game_id": 4}' --accountId $USER_ID
 ```
 
 #### more views
-```rust
+
+```sh
 // total players across all played games history (num)
-near view $TICTACTOE get_total_stats_num '' 
+near view $TICTACTOE get_total_stats_num ''
 // total players across all played games history (accounts)
 near view $TICTACTOE get_accounts_played ''
 // penalty games num for given player account_id
