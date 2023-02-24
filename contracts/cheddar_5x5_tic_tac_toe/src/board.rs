@@ -249,14 +249,14 @@ mod test {
 
         // make move
         let result = board.check_move(&Coords {
-            x: BOARD_SIZE as u8,
-            y: BOARD_SIZE as u8,
+            x: BOARD_SIZE,
+            y: BOARD_SIZE,
         });
         assert_eq!(
             result,
             Err(MoveError::InvalidPosition {
-                row: BOARD_SIZE as u8,
-                col: BOARD_SIZE as u8
+                row: BOARD_SIZE,
+                col: BOARD_SIZE
             })
         );
     }

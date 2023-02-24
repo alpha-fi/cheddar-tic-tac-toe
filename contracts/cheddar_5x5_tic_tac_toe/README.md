@@ -16,6 +16,7 @@ The starting player is selected at the beginning of the game using NEAR random m
 
 ```sh
 export TICTACTOE=<account-where-we-deploy>
+export CHEDDAR=token-v3.cheddar.testnet
 export PLAYER1=first.near
 export PLAYER2=second.near
 export ONE_TOKEN_DEPOSIT=1000000000000000000000000
@@ -26,16 +27,11 @@ export ONE_NEAR=1000000000000000000000000
 
 See Makefile `deploy-testnet` job and `config.rs` for available config options.
 
-#### whitelist token(private) and register contract into token
+#### register contract into token
 
 ```sh
 near call $TICTACTOE set_max_duration '{"max_duration": 3600}' --accountId $TICTACTOE
-near call $TICTACTOE whitelist_token '{
-    "token_id" : "token-v3.cheddar.testnet",
-    "min_deposit": "'$ONE_TOKEN_DEPOSIT'"
-}' --accountId $TICTACTOE
-near call token-v3.cheddar.testnet storage_deposit '' --accountId $TICTACTOE --amount 0.0125
-near view $TICTACTOE get_whitelisted_tokens ''
+near call $CHEDDAR storage_deposit '' --accountId $TICTACTOE --amount 0.0125
 ```
 
 #### make available (no referrer, no opponent)

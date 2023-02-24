@@ -2,15 +2,6 @@ use crate::*;
 
 #[near_bindgen]
 impl Contract {
-    /// Decimals must be set accurate because of counting min deposit!
-    #[private]
-    pub fn whitelist_token(&mut self, token_id: TokenContractId, min_deposit: U128) {
-        assert!(self
-            .whitelisted_tokens
-            .insert(&token_id, &min_deposit.0)
-            .is_none());
-    }
-
     #[private]
     pub fn set_service_fee(&mut self, service_fee: u16, referrer_fee: u16) -> bool {
         validate_fee(service_fee, referrer_fee);

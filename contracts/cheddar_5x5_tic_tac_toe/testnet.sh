@@ -36,14 +36,8 @@ TICTACTOE=$(cat neardev/tic_tac_toe/dev-account)
 echo set_max_duration
 near call $TICTACTOE set_max_duration '{"max_duration": 3600}' --accountId $TICTACTOE 
 
-echo whitelist
-near call $TICTACTOE whitelist_token '{
-    "token_id" : "'$TOKEN'",
-    "min_deposit": "'$ONE_TOKEN'"
-}' --accountId $TICTACTOE
-
+echo register token
 near call $TOKEN storage_deposit '' --accountId $TICTACTOE --amount 0.0125
-near view $TICTACTOE get_whitelisted_tokens ''
 
 echo make_users_available
 near call $TICTACTOE make_available '{}' --accountId $USER1 --amount 1 --gas=300000000000000

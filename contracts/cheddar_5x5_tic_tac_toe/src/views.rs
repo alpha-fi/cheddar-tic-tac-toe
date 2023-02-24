@@ -143,19 +143,8 @@ impl Contract {
         game.board.to_tiles()
     }
 
-    pub fn get_whitelisted_tokens(&self) -> Vec<(TokenContractId, U128)> {
-        self.whitelisted_tokens
-            .to_vec()
-            .iter()
-            .map(|(acc, min_dep)| (acc.clone(), U128(*min_dep)))
-            .collect()
-    }
-
-    pub fn get_token_min_deposit(&self, token_id: &TokenContractId) -> U128 {
-        self.whitelisted_tokens
-            .get(token_id)
-            .expect("Token isn't whitelisted")
-            .into()
+    pub fn get_token_min_deposit(&self) -> U128 {
+        self.min_deposit.into()
     }
 
     pub fn get_available_players(&self) -> Vec<(AccountId, GameConfigView)> {

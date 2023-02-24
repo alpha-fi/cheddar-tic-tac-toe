@@ -36,7 +36,6 @@ use crate::views::GameResult;
 
 #[derive(BorshSerialize, BorshStorageKey)]
 pub enum StorageKey {
-    WhitelistedTokens,
     Games,
     StoredGames,
     GameBoard {game_id: GameId},
@@ -48,14 +47,11 @@ pub enum StorageKey {
     TotalAffiliateRewards {account_id : AccountId}
 }
 
-pub (crate) type MinDeposit = Balance;
-
 #[near_bindgen]
 #[derive(BorshSerialize, BorshDeserialize, PanicOnDefault)]
 pub struct Contract {
     cheddar: AccountId,
-    /// Allowed game reward tokens as `TokenContractId` : `MinDeposit`
-    whitelisted_tokens: UnorderedMap<TokenContractId, MinDeposit>,
+    min_deposit: Balance,
     games: UnorderedMap<GameId, Game>,
     available_players: UnorderedMap<AccountId, GameConfig>,
     /* * */
@@ -80,16 +76,19 @@ pub struct Contract {
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(cheddar: AccountId, config: Option<Config>) -> Self {
+    /// @cheddar: the cheddart token account address
+    pub fn new(cheddar: AccountId, min_deposit: Balance, config: Option<Config>) -> Self {
         let config = config.unwrap_or(Config {
             fee: MAX_FEES,
             referrer_fee_share: 2000, // 20%
             max_game_duration_sec: sec_to_nano(60 * 60), // 1h
             max_stored_games:    50
         });
+        let min_min_deposit = ONE_NEAR * 10;  // 10
+        assert!(min_deposit >= min_min_deposit, "min_deposit must be at least {}", min_min_deposit);
         Self {
             cheddar,
-            whitelisted_tokens: UnorderedMap::new(StorageKey::WhitelistedTokens),
+            min_deposit,
             games: UnorderedMap::new(StorageKey::Games),
             available_players: UnorderedMap::new(StorageKey::Players),
             stats: UnorderedMap::new(StorageKey::Stats),
@@ -536,12 +535,6 @@ mod tests {
         (context, contract)
     }
 
-    fn whitelist_token(
-        ctr: &mut Contract,
-    ) {
-        ctr.whitelist_token(acc_cheddar().clone(), U128(ONE_CHEDDAR / 10))
-    }
-
     fn make_available_near(
         ctx: &mut VMContextBuilder,
         ctr: &mut Contract,
@@ -671,10 +664,6 @@ mod tests {
     fn game_basics() -> Result<(VMContextBuilder, Contract), std::io::Error> {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC)); // HERE
         assert!(ctr.get_available_players().is_empty());
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
 
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -772,15 +761,6 @@ mod tests {
     }
 
     #[test]
-    fn test_whitelist_token() {
-        let (_, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), U128(ONE_CHEDDAR / 10))
-        ]));
-        assert!(ctr.get_available_players().is_empty());
-    }
-    #[test]
     fn make_available_unavailable_near() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         assert!(ctr.get_available_players().is_empty());
@@ -809,10 +789,6 @@ mod tests {
     #[test]
     fn test_make_available_unavailable() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -850,10 +826,6 @@ mod tests {
     #[should_panic(expected="Mismatch deposit token! Both players have to deposit the same token to play the game")]
     fn start_game_diff_tokens() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -868,10 +840,6 @@ mod tests {
     #[test]
     fn test_give_up() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -924,10 +892,6 @@ mod tests {
     #[test]
     fn test_game_basics() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(10), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -992,10 +956,6 @@ mod tests {
     #[test]
     fn test_tie_scenario() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -1068,10 +1028,6 @@ mod tests {
     #[should_panic(expected="Too early to stop the game")]
     fn test_stop_game_too_early() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), U128(ONE_CHEDDAR / 10))
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -1117,10 +1073,6 @@ mod tests {
     #[should_panic(expected="No access")]
     fn test_stop_game_wrong_access() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -1164,10 +1116,6 @@ mod tests {
     // #[test]
     // fn test_expired_game() {
     //     let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-    //     whitelist_token(&mut ctr);
-    //     assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-    //         (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-    //     ]));
     //     assert!(ctr.get_available_players().is_empty());
     //     let gc1 = GameConfigArgs { 
     //         opponent_id: Some(opponent()), 
@@ -1235,10 +1183,6 @@ mod tests {
     // #[test]
     // fn test_stop_game() {
     //     let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  None);
-    //     whitelist_token(&mut ctr);
-    //     assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-    //         (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-    //     ]));
     //     assert!(ctr.get_available_players().is_empty());
     //     let gc1 = GameConfigArgs { 
     //         opponent_id: Some(opponent()), 
@@ -1424,10 +1368,6 @@ mod tests {
     #[test]
     fn test_claim_timeout_win() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
@@ -1482,10 +1422,6 @@ mod tests {
     #[test]
     fn test_claim_timeout_win_when_no_timeout() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(10), None,  Some(MIN_GAME_DURATION_SEC));
-        whitelist_token(&mut ctr);
-        assert_eq!(ctr.get_whitelisted_tokens(), Vec::from([
-            (acc_cheddar(), (ONE_CHEDDAR / 10).into())
-        ]));
         assert!(ctr.get_available_players().is_empty());
         let gc1 = GameConfigArgs { 
             opponent_id: Some(opponent()), 
