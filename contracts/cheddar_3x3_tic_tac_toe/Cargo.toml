@@ -8,5 +8,5 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-near-sdk = "^4.1.1"
-near-contract-standards = "^4.1.1"
+near-sdk.workspace = true
+near-contract-standards.workspace = true
