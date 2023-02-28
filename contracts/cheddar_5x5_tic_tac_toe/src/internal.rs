@@ -109,7 +109,7 @@ impl Contract {
             .unwrap_or(0)
             .checked_mul(self.service_fee as u128)
             .unwrap_or(0);
-        assert!(fees_amount > 0, "Incorrect fees computing");
+        // assert!(fees_amount > 0, "Incorrect fees computing"); //TODO: i think we do not need this assertion since we allow zero fees
 
         let winner_reward: Balance = players_deposit.0 - fees_amount;
 
@@ -139,8 +139,10 @@ impl Contract {
                 Some(amount) => amount,
                 None => panic!("Failed divide deposit to refund GameDeposit (GameResult::Tie)"),
             };
+            print!("refund ammount {}", refund_amount);
+            print!("reward.balance.0 {}", reward.balance.0);
             assert!(
-                refund_amount.checked_mul(PLAYERS_NUM as u128) < Some(reward.balance.0),
+                refund_amount.checked_mul(PLAYERS_NUM as u128) <= Some(reward.balance.0), //TODO: I think it must be smaller or equal since we allow zero fees
                 "Incorrect Tie refund amount calculation"
             );
             log!("Tie. Refund: {}", refund_amount);

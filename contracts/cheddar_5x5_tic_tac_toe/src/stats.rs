@@ -18,8 +18,8 @@ pub struct Stats {
     pub games_num: u64,
     pub victories_num: u64,
     pub penalties_num: u64,
-    pub total_reward: UnorderedMap<TokenContractId, Balance>,
-    pub total_affiliate_reward: UnorderedMap<TokenContractId, Balance>,
+    pub total_reward: Balance,
+    pub total_affiliate_reward: Balance,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -37,8 +37,8 @@ pub struct StatsView {
     pub games_played: u64,
     pub victories_num: u64,
     pub penalties_num: u64,
-    pub total_reward: Vec<(TokenContractId, Balance)>,
-    pub total_affiliate_reward: Vec<(AffiliateId, Balance)>,
+    pub total_reward: Balance,
+    pub total_affiliate_reward: Balance,
 }
 #[near_bindgen]
 impl Contract {
@@ -49,8 +49,8 @@ impl Contract {
             games_played: stats.games_num, 
             victories_num: stats.victories_num, 
             penalties_num: stats.penalties_num, 
-            total_reward: stats.total_reward.to_vec(), 
-            total_affiliate_reward: stats.total_affiliate_reward.to_vec() 
+            total_reward: stats.total_reward, 
+            total_affiliate_reward: stats.total_affiliate_reward 
         }
     }
     pub fn get_user_penalties(&self, account_id: &AccountId) -> UserPenalties {
@@ -76,8 +76,8 @@ impl Stats {
             games_num: 0,
             victories_num: 0,
             penalties_num: 0,
-            total_reward: UnorderedMap::new(StorageKey::TotalRewards { account_id: account_id.clone() }),
-            total_affiliate_reward: UnorderedMap::new(StorageKey::TotalAffiliateRewards { account_id: account_id.clone() }),
+            total_reward: 0,
+            total_affiliate_reward: 0,
         }
     }
 }
@@ -114,23 +114,13 @@ impl Contract {
                     stats.victories_num += 1;
                 },
                 UpdateStatsAction::AddTotalReward => {
-                    let token_id = match token_id {
-                        Some(id) => id,
-                        None => panic!("TokenId for update stats isn't set"),
-                    };
                     if let Some(added_balance) = balance {
-                        let cur_balance = stats.total_reward.get(token_id).unwrap_or(0);
-                        stats.total_reward.insert(token_id, &(cur_balance + added_balance));
+                        stats.total_reward += added_balance;
                     }
                 },
                 UpdateStatsAction::AddAffiliateReward => {
-                    let token_id = match token_id {
-                        Some(id) => id,
-                        None => panic!("TokenId for update stats isn't set"),
-                    };
                     if let Some(added_balance) = balance {
-                        let cur_balance = stats.total_affiliate_reward.get(token_id).unwrap_or(0);
-                        stats.total_affiliate_reward.insert(token_id, &(cur_balance + added_balance));
+                        stats.total_affiliate_reward += added_balance;
                     }
                 },
                 UpdateStatsAction::AddPenaltyGame => {

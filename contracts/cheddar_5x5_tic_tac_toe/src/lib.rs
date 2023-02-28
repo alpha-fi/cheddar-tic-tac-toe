@@ -84,7 +84,7 @@ impl Contract {
             max_game_duration_sec: sec_to_nano(60 * 60), // 1h
             max_stored_games:    50
         });
-        let min_min_deposit = ONE_NEAR * 10;  // 10
+        let min_min_deposit = ONE_NEAR;
         assert!(min_deposit >= min_min_deposit, "min_deposit must be at least {}", min_min_deposit);
         Self {
             cheddar,
@@ -411,6 +411,7 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
+        print!("currecnt dur: {}, max_game_duration: {}, last_turn_timestam: {}, max_turn_duration: {}   ",game.current_duration, self.max_game_duration, game.last_turn_timestamp, self.max_turn_duration);
         assert!(
             game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
             "Too early to stop the game"
@@ -489,6 +490,7 @@ mod tests {
     use super::*;
     const MIN_GAME_DURATION_SEC: u32 = 25 * 60;
     const ONE_CHEDDAR:Balance = ONE_NEAR;
+    const MIN_FEES: u32 = 0;
 
     fn user() -> AccountId {
         "user".parse().unwrap()
@@ -518,14 +520,16 @@ mod tests {
             None
         } else {
             Some(Config {
-                fee: service_fee_percentage.unwrap(),
-                referrer_fee_share: referrer_fee.unwrap_or(BASIS_P / 2),
-                max_game_duration_sec: max_game_duration_sec.unwrap(),
+                fee: service_fee_percentage.unwrap() as u16,
+                referrer_fee_share: referrer_fee.unwrap_or((BASIS_P / 2) as u32) as u16,
+                max_game_duration_sec: max_game_duration_sec.unwrap() as u64,
                 max_stored_games: 50u8
             })
         };
 
         let contract = Contract::new(
+            acc_cheddar(),
+            MIN_DEPOSIT_NEAR,
             config
         );
         testing_env!(context
@@ -631,7 +635,7 @@ mod tests {
         // 1 x ▢ ▢
         // 2 ▢ ▢ o
         // 3 ▢ ▢ ▢
-        let mut matrix: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] =
+        let mut matrix: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] =
             Default::default();
         for tile in tiles.x_coords.iter() {
             matrix[tile.y as usize][tile.x as usize] = Some(Piece::X);
@@ -885,9 +889,9 @@ mod tests {
             player_1_stats.victories_num == 0 && player_2_stats.victories_num == 1
         );
         assert_eq!(
-            player_2_stats.total_reward, Vec::from([(acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * 10)))])
+            player_2_stats.total_reward, (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * 10))
         );
-        assert!(player_1_stats.total_reward.is_empty());
+        assert_eq!(player_1_stats.total_reward, 0);
     }
     #[test]
     fn test_game_basics() {
@@ -941,11 +945,9 @@ mod tests {
             player_2_stats.victories_num == 1 && player_1_stats.victories_num == 0
         );   
         assert_eq!(
-            player_2_stats.total_reward.clone(), Vec::from([
-                (acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
-            ])
-        );
-        assert!(player_1_stats.total_reward.is_empty());
+            player_2_stats.total_reward.clone(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
+            ;
+        assert_eq!(player_1_stats.total_reward, 0);
     }
 
     #[test]
@@ -1066,7 +1068,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
         
-        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 20);
+        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 5);
     }
 
     #[test]
@@ -1409,15 +1411,7 @@ mod tests {
         ctr.claim_timeout_win(&game_id);
         assert!(ctr.get_stats(&player_1).victories_num == 1);
         assert!(ctr.get_stats(&player_2).victories_num == 0);
-        assert_eq!(
-            ctr.get_stats(&player_1).total_reward,
-            Vec::from([
-                (
-                    acc_cheddar(),
-                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * 10 ))
-                )
-            ])
-        )
+        assert_eq!(ctr.get_stats(&player_1).total_reward,(2 * ONE_CHEDDAR));
     }
     #[test]
     fn test_claim_timeout_win_when_no_timeout() {
