@@ -14,4 +14,23 @@ impl Contract {
             self.available_players.insert(&user, config);
         }
     }
+    #[private]
+    pub fn transfer_callback(&mut self, user: AccountId, stats: &StatsView) {
+        if promise_result_as_failed() {
+            log!(
+                "Transfer failed. Recovering state for {} account",
+                user.clone(),
+            );
+            let stats = Stats  {
+                    referrer_id: stats.referrer_id.clone(),
+                    affiliates: UnorderedSet::new(b"s"), //TODO: not sure why we store it as unordered set
+                    games_num: stats.games_played,
+                    victories_num: stats.victories_num,
+                    penalties_num: stats.penalties_num,
+                    total_reward: stats.total_reward,
+                    total_affiliate_reward: stats.total_affiliate_reward,
+            };
+            self.stats.insert(&user.clone(), &stats);
+        }
+    }
 }

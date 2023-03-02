@@ -60,7 +60,6 @@ impl Contract {
             for (account_id, config) in expired_players.iter() {
                 let token_id = config.token_id.clone();
                 self.available_players.remove(&account_id);
-
                 self.internal_transfer(&token_id, &account_id, config.deposit.into())
                     .then(
                         Self::ext(env::current_account_id())
@@ -115,8 +114,13 @@ impl Contract {
 
         if let Some(winner_id) = winner {
             log!("Winner is {}. Reward: {}", winner_id, winner_reward);
-
-            self.internal_transfer(&token_id, winner_id, winner_reward.into());
+            let stats = self.get_stats(winner_id);
+            self.internal_transfer(&token_id, winner_id, winner_reward.into())
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .transfer_callback(winner_id.clone(), &stats),
+            );
 
             self.internal_distribute_fee(&token_id, fees_amount, winner_id);
             self.internal_update_stats(
