@@ -495,6 +495,102 @@ mod test {
         assert_eq!(result, true);
     }
     #[test]
+    fn test_board_25_x_25() {
+        let game_id: u64 = 1;
+        // initialize the board
+        let board = Board::new(game_id);
+
+        // make move
+        let mut result = board.check_move(&Coords {x: 24, y: 24});
+        assert_eq!(result,Ok(()));
+        result = board.check_move(&Coords {x: 24, y: 0});
+        assert_eq!(result,Ok(()));
+        result = board.check_move(&Coords {x: 0, y: 24});
+        assert_eq!(result,Ok(()));
+        result = board.check_move(&Coords {x: 0, y: 0});
+        assert_eq!(result,Ok(()));
+    }
+    #[test]
+    fn check_sw_diagonal_winner_25x25() {
+        // create two players
+        let piece_2 = Piece::X;
+        let game_id: u64 = 1;
+        // initialize the board
+        let mut board = Board::new(game_id);
+
+        // prepare the board
+        board.tiles.insert(&Coords { x: 24, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 23, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 22, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 20, y: 4}, &piece_2);
+        let result = board.check_winner(&Coords{ x: 21, y: 3 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_row_winner_25x25() {
+        // create two players
+        let piece_2 = Piece::X;
+        let game_id: u64 = 1;
+        // initialize the board
+        let mut board = Board::new(game_id);
+
+        // prepare the board
+        board.tiles.insert(&Coords { x: 24, y: 20}, &piece_2);
+        board.tiles.insert(&Coords { x: 23, y: 20}, &piece_2);
+        board.tiles.insert(&Coords { x: 22, y: 20}, &piece_2);
+        board.tiles.insert(&Coords { x: 21, y: 20}, &piece_2);
+        let result = board.check_winner(&Coords{ x: 20, y: 20 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_diagonal_se_winner_25x25() {
+        // create two players
+        let piece_2 = Piece::X;
+        let game_id: u64 = 1;
+        // initialize the board
+        let mut board = Board::new(game_id);
+
+        // prepare the board
+        board.tiles.insert(&Coords { x: 24, y: 24}, &piece_2);
+        board.tiles.insert(&Coords { x: 23, y: 23}, &piece_2);
+        board.tiles.insert(&Coords { x: 21, y: 21}, &piece_2);
+        board.tiles.insert(&Coords { x: 20, y: 20}, &piece_2);
+        let result = board.check_winner(&Coords{ x: 22, y: 22 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_horizontal_bottom_edge_winner_25x25() {
+        // create two players
+        let piece_2 = Piece::X;
+        let game_id: u64 = 1;
+        // initialize the board
+        let mut board = Board::new(game_id);
+
+        // prepare the board
+        board.tiles.insert(&Coords { x: 24, y: 20}, &piece_2);
+        board.tiles.insert(&Coords { x: 24, y: 21}, &piece_2);
+        board.tiles.insert(&Coords { x: 24, y: 22}, &piece_2);
+        board.tiles.insert(&Coords { x: 24, y: 23}, &piece_2);
+        let result = board.check_winner(&Coords{ x: 24, y: 24 });
+        assert_eq!(result, true); 
+    }
+    #[test]
+    fn check_horizontal_top_edge_winner_25x25() {
+        // create two players
+        let piece_2 = Piece::X;
+        let game_id: u64 = 1;
+        // initialize the board
+        let mut board = Board::new(game_id);
+
+        // prepare the board
+        board.tiles.insert(&Coords { x: 24, y: 0}, &piece_2);
+        board.tiles.insert(&Coords { x: 24, y: 1}, &piece_2);
+        board.tiles.insert(&Coords { x: 24, y: 2}, &piece_2);
+        board.tiles.insert(&Coords { x: 24, y: 3}, &piece_2);
+        let result = board.check_winner(&Coords{ x: 24, y: 4 });
+        assert_eq!(result, true); 
+    }
+    #[test]
     fn test_to_tiles() {
         let piece_2 = Piece::X;
         let game_id: u64 = 1;

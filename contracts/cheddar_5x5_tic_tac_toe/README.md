@@ -1,12 +1,15 @@
 ```rust
 X ▢ ▢ ▢ ▢
 ▢ ▢ O ▢ ▢
-▢ ▢ ▢ ▢ ▢
+▢ ▢ ▢ ▢ ▢ ...
 ▢ X ▢ ▢ ▢
 ▢ O ▢ O ▢
+    .
+    .
+    .
 ```
 
-## Cheddar 5X5 TIC-TAC-TOE Game
+## Cheddar 25x25 TIC-TAC-TOE Game
 
 ### Who starts th game?
 

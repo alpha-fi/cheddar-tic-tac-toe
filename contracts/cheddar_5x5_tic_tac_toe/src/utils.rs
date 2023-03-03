@@ -20,8 +20,8 @@ pub(crate) type GameId = u64;
 pub(crate) type AffiliateId = AccountId;
 
 /// This constant can be used to set the board size
-pub(crate) const BOARD_SIZE: u8 = 5;
-pub(crate) const MAX_NUM_TURNS: u64 = (BOARD_SIZE as u64) * (BOARD_SIZE as u64);
+pub(crate) const BOARD_SIZE: usize = 25;
+pub(crate) const MAX_NUM_TURNS: u64 = (BOARD_SIZE*BOARD_SIZE) as u64;
 pub(crate) const PLAYERS_NUM: usize = 2;
 
 /// Returns true if the promise was failed. Otherwise returns false.
