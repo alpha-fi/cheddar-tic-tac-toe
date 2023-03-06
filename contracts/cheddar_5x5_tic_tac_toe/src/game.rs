@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::*;
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Clone, Debug)]

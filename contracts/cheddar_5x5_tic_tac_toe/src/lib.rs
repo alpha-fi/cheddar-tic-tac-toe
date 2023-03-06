@@ -232,6 +232,11 @@ impl Contract {
             panic!("Your opponent is not ready");
         }
     }
+
+    pub fn get_last_move(&self, game_id: &GameId) -> (Coords, Piece){
+        let game = self.internal_get_game(game_id);
+        return (game.board.get_last_move(), game.board.get_last_move_piece());
+    }
     
 
     // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
@@ -248,6 +253,8 @@ impl Contract {
             Ok(_) => {
                 // fill board tile with current player piece
                 game.board.tiles.insert(&coords, &game.current_piece);
+                // set the last move 
+                game.board.last_move = Some(coords.clone());
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
                 // switch player
@@ -609,6 +616,17 @@ mod tests {
             .predecessor_account_id(user.clone())
             .build());
         ctr.make_move(game_id, Coords{y: row, x: col})
+    }
+    fn get_last_move(
+        ctx: &mut VMContextBuilder,
+        ctr: &mut Contract,
+        user: &AccountId,
+        game_id: &GameId,
+    ) -> (Coords, Piece) {
+        testing_env!(ctx
+            .predecessor_account_id(user.clone())
+            .build());
+        ctr.get_last_move(game_id)  
     }
 
     fn stop_game(
@@ -1461,5 +1479,47 @@ mod tests {
     fn test_player_piece_binding() {
         let board = Board::new(1);
         assert_eq!(board.current_piece, Piece::O);
+    }
+    #[test]
+    fn test_get_last_move() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        assert!(ctr.get_available_players().is_empty());
+        let gc1 = GameConfigArgs { 
+            opponent_id: Some(opponent()), 
+            referrer_id: None 
+        };
+        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+        let gc2 = GameConfigArgs { 
+            opponent_id: Some(user()), 
+            referrer_id: None 
+        };
+        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+        let game = ctr.internal_get_game(&game_id);
+        let player_1 = game.current_player_account_id().clone();
+        let player_2 = game.next_player_account_id().clone();
+
+        println!("( {} , {} )", player_1, player_2);
+
+        assert_ne!(player_1, game.next_player_account_id());
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
+
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
+
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+        let (last_move, _) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
+        assert_eq!(last_move.x, 0);
+        assert_eq!(last_move.y, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
+        let (last_move, _) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
+        assert_eq!(last_move.x, 1);
+        assert_eq!(last_move.y, 0);
+        
     }
 }
