@@ -107,8 +107,7 @@ impl Contract {
             .checked_div(BASIS_P.into())
             .unwrap_or(0)
             .checked_mul(self.service_fee as u128)
-            .unwrap_or(0);
-        // assert!(fees_amount > 0, "Incorrect fees computing"); //TODO: i think we do not need this assertion since we allow zero fees
+            .expect("multiplication overflow");
 
         let winner_reward: Balance = players_deposit.0 - fees_amount;
 
@@ -139,14 +138,12 @@ impl Contract {
             );
             winner_reward.into()
         } else {
-            let refund_amount = match winner_reward.checked_div(PLAYERS_NUM as u128) {
+            let refund_amount = match winner_reward.checked_div(2) {
                 Some(amount) => amount,
                 None => panic!("Failed divide deposit to refund GameDeposit (GameResult::Tie)"),
             };
-            print!("refund ammount {}", refund_amount);
-            print!("reward.balance.0 {}", reward.balance.0);
-            assert!(
-                refund_amount.checked_mul(PLAYERS_NUM as u128) <= Some(reward.balance.0), //TODO: I think it must be smaller or equal since we allow zero fees
+            require!(
+                refund_amount.checked_mul(2) <= Some(reward.balance.0),
                 "Incorrect Tie refund amount calculation"
             );
             log!("Tie. Refund: {}", refund_amount);
@@ -168,7 +165,7 @@ impl Contract {
                 .checked_div(BASIS_P.into())
                 .unwrap_or(0)
                 .checked_mul(self.referrer_fee_share as u128)
-                .unwrap_or(0);
+                .expect("multiplication overflow");
 
             if computed_referrer_fee > 0 {
                 log!(
