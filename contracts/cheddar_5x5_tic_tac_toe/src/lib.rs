@@ -84,7 +84,7 @@ impl Contract {
             max_game_duration_sec: sec_to_nano(60 * 60), // 1h
             max_stored_games:    50
         });
-        let min_min_deposit = ONE_NEAR;
+        let min_min_deposit = MIN_DEPOSIT_CHEDDAR;
         assert!(min_deposit >= min_min_deposit, "min_deposit must be at least {}", min_min_deposit);
         Self {
             cheddar,
@@ -103,7 +103,7 @@ impl Contract {
         }
     }
 
-    /// Make player available only with NEAR deposits
+    /// Make player available only with CHEDDAR deposits
     #[payable]
     pub fn make_available(
         &mut self,
@@ -117,7 +117,7 @@ impl Contract {
         assert!(self.available_players.get(account_id).is_none(), "Already in the waiting list the list");
 
         let deposit: Balance = env::attached_deposit();
-        assert!(deposit >= MIN_DEPOSIT_NEAR, "Deposit is too small. Attached: {}, Required: {}", deposit, MIN_DEPOSIT_NEAR);
+        assert!(deposit >= MIN_DEPOSIT_CHEDDAR, "Deposit is too small. Attached: {}, Required: {}", deposit, MIN_DEPOSIT_CHEDDAR);
 
         let (opponent_id, referrer_id) = if let Some(game_config) = game_config {
             (game_config.opponent_id, game_config.referrer_id.clone())
@@ -232,6 +232,7 @@ impl Contract {
             panic!("Your opponent is not ready");
         }
     }
+    
 
     // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<Winner> {
@@ -252,7 +253,6 @@ impl Contract {
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
                 game.board.update_winner(&coords);
-
                 if let Some(winner) = game.board.winner.clone() {
                     // change game state to Finished
                     game.change_state(GameState::Finished);
@@ -411,9 +411,7 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
-        print!("block_timestamp {}", env::block_timestamp());
-        print!("currecnt dur: {}, max_game_duration: {}, last_turn_timestam: {}, max_turn_duration: {}   ",game.current_duration, self.max_game_duration, game.last_turn_timestamp, self.max_turn_duration);
-        assert!(
+        require!(
             game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
             "Too early to stop the game"
         );
@@ -530,7 +528,7 @@ mod tests {
 
         let contract = Contract::new(
             acc_cheddar(),
-            MIN_DEPOSIT_NEAR,
+            MIN_DEPOSIT_CHEDDAR,
             config
         );
         testing_env!(context
@@ -621,7 +619,6 @@ mod tests {
         forward_time_sec: u32
     ) {
         let nanos = sec_to_nano(forward_time_sec);
-        print!("nanos: {}", nanos);
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .attached_deposit(ONE_YOCTO)
@@ -934,7 +931,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 3);
-        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
+        let winner = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
 
         let player_1_stats = ctr.get_stats(&user());
         let player_2_stats = ctr.get_stats(&&opponent());
@@ -950,6 +947,7 @@ mod tests {
             player_2_stats.total_reward.clone(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
             ;
         assert_eq!(player_1_stats.total_reward, 0);
+        assert_eq!(winner,Some(Winner::O));
     }
 
     #[test]

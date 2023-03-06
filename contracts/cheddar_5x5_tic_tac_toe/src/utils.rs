@@ -12,8 +12,6 @@ pub(crate) const GAS_FOR_FT_TRANSFER: Gas = Gas(Gas::ONE_TERA.0 * 10);
 pub(crate) const MAX_FEES: u16 = 1000; // 10%
 pub(crate) const BASIS_P: u16 = 10000; // 100%
 pub(crate) const TIMEOUT_WIN: u64 = 300000000000; // 5 minutes timeout
-
-pub(crate) const MIN_DEPOSIT_NEAR: Balance = ONE_NEAR; // 0.1 NEAR
 pub(crate) const MIN_DEPOSIT_CHEDDAR: Balance =  10; //TODO: how much the minimum deposit should be?
 
 pub(crate) type TokenContractId = AccountId;
