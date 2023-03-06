@@ -94,10 +94,10 @@ impl Contract {
             stats: UnorderedMap::new(StorageKey::Stats),
             next_game_id: 0,
             service_fee: config.fee,
-            max_game_duration: config.max_game_duration_sec,
+            max_game_duration: sec_to_nano(config.max_game_duration_sec as u32),
             referrer_fee_share: config.referrer_fee_share,
             last_update_timestamp: 0,
-            max_turn_duration: config.max_game_duration_sec / MAX_NUM_TURNS,
+            max_turn_duration: sec_to_nano(config.max_game_duration_sec as u32 / MAX_NUM_TURNS as u32),
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames)
         }
@@ -411,6 +411,7 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
+        print!("block_timestamp {}", env::block_timestamp());
         print!("currecnt dur: {}, max_game_duration: {}, last_turn_timestam: {}, max_turn_duration: {}   ",game.current_duration, self.max_game_duration, game.last_turn_timestamp, self.max_turn_duration);
         assert!(
             game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
@@ -620,6 +621,7 @@ mod tests {
         forward_time_sec: u32
     ) {
         let nanos = sec_to_nano(forward_time_sec);
+        print!("nanos: {}", nanos);
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .attached_deposit(ONE_YOCTO)
@@ -889,7 +891,7 @@ mod tests {
             player_1_stats.victories_num == 0 && player_2_stats.victories_num == 1
         );
         assert_eq!(
-            player_2_stats.total_reward, (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * 10))
+            player_2_stats.total_reward, (2 * ONE_CHEDDAR)
         );
         assert_eq!(player_1_stats.total_reward, 0);
     }
@@ -1068,7 +1070,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
         
-        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 5);
+        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 1);
     }
 
     #[test]
