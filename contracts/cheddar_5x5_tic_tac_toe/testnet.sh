@@ -31,6 +31,19 @@ near dev-deploy --wasmFile ./res/cheddar_big_tic_tac_toe.wasm  \
             }
 		}'
 
+
+
+near dev-deploy --wasmFile ./res/cheddar_big_tic_tac_toe.wasm  \
+		--initFunction "new" \
+		--projectKeyDirectory ./neardev/ \
+		--initArgs '{"cheddar": token-v3.cheddar.testnet, "min_deposit": 20, "config": {
+                "fee": 200,
+                "referrer_fee_share": 5000,
+                "max_game_duration_sec": 3600,
+                "max_stored_games": 50
+            }
+		}'
+
 TICTACTOE=$(cat neardev/tic_tac_toe/dev-account)
 
 echo set_max_duration
