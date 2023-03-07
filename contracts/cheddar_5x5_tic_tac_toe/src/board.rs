@@ -75,9 +75,8 @@ impl Board {
         }
         Ok(())
     }
-    pub fn check_winner(&mut self, position: &Coords) -> bool {
+    pub fn check_winner(&self, position: &Coords) -> bool {
         let expected = Some(self.current_piece.other());
-        self.current_piece = self.current_piece.other();
         let mut c = position.clone();
         let mut counter = 1;
         // 1. check rows
@@ -594,7 +593,6 @@ mod test {
         let game_id: u64 = 1;
         // initialize the board
         let mut board = Board::new(game_id);
-        assert_eq!(board.current_piece, Piece::O);
 
         // prepare the board
         board.tiles.insert(&Coords { x: 24, y: 0}, &piece_2);
@@ -602,7 +600,6 @@ mod test {
         board.tiles.insert(&Coords { x: 24, y: 2}, &piece_2);
         board.tiles.insert(&Coords { x: 24, y: 3}, &piece_2);
         let result = board.check_winner(&Coords{ x: 24, y: 4 });
-        assert_eq!(board.current_piece, Piece::X);
         assert_eq!(result, true); 
     }
     #[test]

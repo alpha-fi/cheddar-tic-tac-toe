@@ -235,7 +235,7 @@ impl Contract {
 
     pub fn get_last_move(&self, game_id: &GameId) -> (Coords, Piece){
         let game = self.internal_get_game(game_id);
-        return (game.board.get_last_move(), game.board.get_last_move_piece());
+        return (game.board.get_last_move(), game.current_piece.other());
     }
     
 
@@ -1511,17 +1511,16 @@ mod tests {
         assert_eq!(game.board.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
-
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        let (last_move, piece) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
+        let (last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
         assert_eq!(last_move.x, 0);
         assert_eq!(last_move.y, 0);
-        assert_eq!(piece, Piece::O);
+        assert_eq!(last_piece, Piece::O);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        let (last_move, piece) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
+        let (last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
         assert_eq!(last_move.x, 1);
         assert_eq!(last_move.y, 0);
-        assert_eq!(piece, Piece::X);
+        assert_eq!(last_piece, Piece::X);
         
     }
 }
