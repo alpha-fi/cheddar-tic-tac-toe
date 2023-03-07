@@ -1513,13 +1513,15 @@ mod tests {
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        let (last_move, _) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
+        let (last_move, piece) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
         assert_eq!(last_move.x, 0);
         assert_eq!(last_move.y, 0);
+        assert_eq!(piece, Piece::O);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        let (last_move, _) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
+        let (last_move, piece) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
         assert_eq!(last_move.x, 1);
         assert_eq!(last_move.y, 0);
+        assert_eq!(piece, Piece::X);
         
     }
 }
