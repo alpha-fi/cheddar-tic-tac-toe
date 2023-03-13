@@ -60,7 +60,6 @@ impl Contract {
             for (account_id, config) in expired_players.iter() {
                 let token_id = config.token_id.clone();
                 self.available_players.remove(&account_id);
-
                 self.internal_transfer(&token_id, &account_id, config.deposit.into())
                     .then(
                         Self::ext(env::current_account_id())
@@ -108,15 +107,19 @@ impl Contract {
             .checked_div(BASIS_P.into())
             .unwrap_or(0)
             .checked_mul(self.service_fee as u128)
-            .unwrap_or(0);
-        assert!(fees_amount > 0, "Incorrect fees computing");
+            .expect("multiplication overflow");
 
         let winner_reward: Balance = players_deposit.0 - fees_amount;
 
         if let Some(winner_id) = winner {
             log!("Winner is {}. Reward: {}", winner_id, winner_reward);
-
-            self.internal_transfer(&token_id, winner_id, winner_reward.into());
+            let stats = self.get_stats(winner_id);
+            self.internal_transfer(&token_id, winner_id, winner_reward.into())
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .transfer_callback(winner_id.clone(), &stats),
+            );
 
             self.internal_distribute_fee(&token_id, fees_amount, winner_id);
             self.internal_update_stats(
@@ -135,12 +138,12 @@ impl Contract {
             );
             winner_reward.into()
         } else {
-            let refund_amount = match winner_reward.checked_div(PLAYERS_NUM as u128) {
+            let refund_amount = match winner_reward.checked_div(2) {
                 Some(amount) => amount,
                 None => panic!("Failed divide deposit to refund GameDeposit (GameResult::Tie)"),
             };
-            assert!(
-                refund_amount.checked_mul(PLAYERS_NUM as u128) < Some(reward.balance.0),
+            require!(
+                refund_amount.checked_mul(2) <= Some(reward.balance.0),
                 "Incorrect Tie refund amount calculation"
             );
             log!("Tie. Refund: {}", refund_amount);
@@ -162,7 +165,7 @@ impl Contract {
                 .checked_div(BASIS_P.into())
                 .unwrap_or(0)
                 .checked_mul(self.referrer_fee_share as u128)
-                .unwrap_or(0);
+                .expect("multiplication overflow");
 
             if computed_referrer_fee > 0 {
                 log!(

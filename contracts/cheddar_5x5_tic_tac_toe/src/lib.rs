@@ -84,7 +84,7 @@ impl Contract {
             max_game_duration_sec: sec_to_nano(60 * 60), // 1h
             max_stored_games:    50
         });
-        let min_min_deposit = ONE_NEAR * 10;  // 10
+        let min_min_deposit = MIN_DEPOSIT_CHEDDAR;
         assert!(min_deposit >= min_min_deposit, "min_deposit must be at least {}", min_min_deposit);
         Self {
             cheddar,
@@ -94,16 +94,16 @@ impl Contract {
             stats: UnorderedMap::new(StorageKey::Stats),
             next_game_id: 0,
             service_fee: config.fee,
-            max_game_duration: config.max_game_duration_sec,
+            max_game_duration: sec_to_nano(config.max_game_duration_sec as u32),
             referrer_fee_share: config.referrer_fee_share,
             last_update_timestamp: 0,
-            max_turn_duration: config.max_game_duration_sec / MAX_NUM_TURNS,
+            max_turn_duration: sec_to_nano(config.max_game_duration_sec as u32 / MAX_NUM_TURNS as u32),
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames)
         }
     }
 
-    /// Make player available only with NEAR deposits
+    /// Make player available only with CHEDDAR deposits
     #[payable]
     pub fn make_available(
         &mut self,
@@ -117,7 +117,7 @@ impl Contract {
         assert!(self.available_players.get(account_id).is_none(), "Already in the waiting list the list");
 
         let deposit: Balance = env::attached_deposit();
-        assert!(deposit >= MIN_DEPOSIT_NEAR, "Deposit is too small. Attached: {}, Required: {}", deposit, MIN_DEPOSIT_NEAR);
+        assert!(deposit >= MIN_DEPOSIT_CHEDDAR, "Deposit is too small. Attached: {}, Required: {}", deposit, MIN_DEPOSIT_CHEDDAR);
 
         let (opponent_id, referrer_id) = if let Some(game_config) = game_config {
             (game_config.opponent_id, game_config.referrer_id.clone())
@@ -233,6 +233,12 @@ impl Contract {
         }
     }
 
+    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece){
+        let game = self.internal_get_game(game_id);
+        return (game.board.get_last_move(), game.current_piece.other());
+    }
+    
+
     // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<Winner> {
         let cur_timestamp = env::block_timestamp();
@@ -247,12 +253,14 @@ impl Contract {
             Ok(_) => {
                 // fill board tile with current player piece
                 game.board.tiles.insert(&coords, &game.current_piece);
+                // set the last move 
+                game.board.last_move = Some(coords.clone());
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
+                game.board.current_piece = game.current_piece;
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
                 game.board.update_winner(&coords);
-
                 if let Some(winner) = game.board.winner.clone() {
                     // change game state to Finished
                     game.change_state(GameState::Finished);
@@ -299,9 +307,11 @@ impl Contract {
                         GameState::Finished,
                         "Cannot stop. Game in progress"
                     );
+                    let winner = game.board.winner;
+
                     self.games.remove(game_id);
                     
-                    return game.board.winner;
+                    return winner;
                 };
             },
             Err(e) => match e {
@@ -411,7 +421,7 @@ impl Contract {
         let (player1, player2) = self.internal_get_game_players(game_id);
 
         game.current_duration = env::block_timestamp() - game.initiated_at;
-        assert!(
+        require!(
             game.current_duration >= self.max_game_duration || env::block_timestamp() - game.last_turn_timestamp > self.max_turn_duration, 
             "Too early to stop the game"
         );
@@ -489,6 +499,7 @@ mod tests {
     use super::*;
     const MIN_GAME_DURATION_SEC: u32 = 25 * 60;
     const ONE_CHEDDAR:Balance = ONE_NEAR;
+    const MIN_FEES: u32 = 0;
 
     fn user() -> AccountId {
         "user".parse().unwrap()
@@ -518,14 +529,16 @@ mod tests {
             None
         } else {
             Some(Config {
-                fee: service_fee_percentage.unwrap(),
-                referrer_fee_share: referrer_fee.unwrap_or(BASIS_P / 2),
-                max_game_duration_sec: max_game_duration_sec.unwrap(),
+                fee: service_fee_percentage.unwrap() as u16,
+                referrer_fee_share: referrer_fee.unwrap_or((BASIS_P / 2) as u32) as u16,
+                max_game_duration_sec: max_game_duration_sec.unwrap() as u64,
                 max_stored_games: 50u8
             })
         };
 
         let contract = Contract::new(
+            acc_cheddar(),
+            MIN_DEPOSIT_CHEDDAR,
             config
         );
         testing_env!(context
@@ -607,6 +620,17 @@ mod tests {
             .build());
         ctr.make_move(game_id, Coords{y: row, x: col})
     }
+    fn get_last_move(
+        ctx: &mut VMContextBuilder,
+        ctr: &mut Contract,
+        user: &AccountId,
+        game_id: &GameId,
+    ) -> (Option<Coords>, Piece) {
+        testing_env!(ctx
+            .predecessor_account_id(user.clone())
+            .build());
+        ctr.get_last_move(game_id)  
+    }
 
     fn stop_game(
         ctx: &mut VMContextBuilder,
@@ -631,7 +655,7 @@ mod tests {
         // 1 x ▢ ▢
         // 2 ▢ ▢ o
         // 3 ▢ ▢ ▢
-        let mut matrix: [[Option<Piece>; BOARD_SIZE]; BOARD_SIZE] =
+        let mut matrix: [[Option<Piece>; BOARD_SIZE as usize]; BOARD_SIZE as usize] =
             Default::default();
         for tile in tiles.x_coords.iter() {
             matrix[tile.y as usize][tile.x as usize] = Some(Piece::X);
@@ -722,10 +746,10 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 1);
         make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 0, 0);
         make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 1, 1);
-       make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 2);
-       make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 2);
-     make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 0);
-     make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 2, 1);
+        make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 2);
+        make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 2);
+        make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 0);
+        make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 2, 1);
 
 
         let player_1_stats = ctr.get_stats(&opponent2);
@@ -758,6 +782,14 @@ mod tests {
 
         ctr.stop_game(&game_id_cheddar);
         Ok((ctx, ctr))
+    }
+
+    #[test]
+    fn test_near_deposit() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        assert!(ctr.get_available_players().is_empty());
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()));
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None);
     }
 
     #[test]
@@ -885,9 +917,9 @@ mod tests {
             player_1_stats.victories_num == 0 && player_2_stats.victories_num == 1
         );
         assert_eq!(
-            player_2_stats.total_reward, Vec::from([(acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * 10)))])
+            player_2_stats.total_reward, (2 * ONE_CHEDDAR)
         );
-        assert!(player_1_stats.total_reward.is_empty());
+        assert_eq!(player_1_stats.total_reward, 0);
     }
     #[test]
     fn test_game_basics() {
@@ -919,6 +951,12 @@ mod tests {
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
+        // _ O O _ X
+        // _ O _ X _
+        // _ O X _ _
+        // _ X O _ _
+        // X _ _ _ _
+
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 1);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 4);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 1);
@@ -928,7 +966,8 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 1);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 3);
-        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
+        let winner = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
+        assert_eq!(winner,Some(Winner::X));
 
         let player_1_stats = ctr.get_stats(&user());
         let player_2_stats = ctr.get_stats(&&opponent());
@@ -938,14 +977,60 @@ mod tests {
             player_1_stats.games_played == player_2_stats.games_played
         );
         assert!(
-            player_2_stats.victories_num == 1 && player_1_stats.victories_num == 0
+            player_1_stats.victories_num == 1 && player_2_stats.victories_num == 0
         );   
         assert_eq!(
-            player_2_stats.total_reward.clone(), Vec::from([
-                (acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
-            ])
-        );
-        assert!(player_1_stats.total_reward.is_empty());
+            player_1_stats.total_reward.clone(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
+            ;
+        assert_eq!(player_2_stats.total_reward, 0);
+    }
+    #[test]
+    fn test_game_basics_2() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(10), None,  Some(MIN_GAME_DURATION_SEC));
+        assert!(ctr.get_available_players().is_empty());
+        let gc1 = GameConfigArgs { 
+            opponent_id: Some(opponent()), 
+            referrer_id: Some(referrer()) 
+        };
+        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+        let gc2 = GameConfigArgs { 
+            opponent_id: Some(user()), 
+            referrer_id: None 
+        };
+        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+        let game = ctr.internal_get_game(&game_id);
+        let player_1 = game.current_player_account_id().clone();
+        let player_2 = game.next_player_account_id().clone();
+
+        assert_ne!(player_1, game.next_player_account_id());
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
+
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
+
+        // _ O O _ X
+        // _ O _ X _
+        // _ O X _ _
+        // _ X O _ _
+        // X _ _ _ _
+
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 4);
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 3);
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
+        print_tiles(&ctr.internal_get_game(&game_id).board.to_tiles());
+        let winner = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 0);
+        assert_eq!(winner,Some(Winner::O));
     }
 
     #[test]
@@ -1066,7 +1151,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
         
-        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 20);
+        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 1);
     }
 
     #[test]
@@ -1409,15 +1494,7 @@ mod tests {
         ctr.claim_timeout_win(&game_id);
         assert!(ctr.get_stats(&player_1).victories_num == 1);
         assert!(ctr.get_stats(&player_2).victories_num == 0);
-        assert_eq!(
-            ctr.get_stats(&player_1).total_reward,
-            Vec::from([
-                (
-                    acc_cheddar(),
-                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * 10 ))
-                )
-            ])
-        )
+        assert_eq!(ctr.get_stats(&player_1).total_reward,(2 * ONE_CHEDDAR));
     }
     #[test]
     fn test_claim_timeout_win_when_no_timeout() {
@@ -1467,5 +1544,50 @@ mod tests {
     fn test_player_piece_binding() {
         let board = Board::new(1);
         assert_eq!(board.current_piece, Piece::O);
+    }
+    #[test]
+    fn test_get_last_move() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        assert!(ctr.get_available_players().is_empty());
+        let gc1 = GameConfigArgs { 
+            opponent_id: Some(opponent()), 
+            referrer_id: None 
+        };
+        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+        let gc2 = GameConfigArgs { 
+            opponent_id: Some(user()), 
+            referrer_id: None 
+        };
+        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+        let game = ctr.internal_get_game(&game_id);
+        let player_1 = game.current_player_account_id().clone();
+        let player_2 = game.next_player_account_id().clone();
+
+        println!("( {} , {} )", player_1, player_2);
+
+        assert_ne!(player_1, game.next_player_account_id());
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
+
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+        let (_last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
+        let last_move = _last_move.unwrap();
+        assert_eq!(last_move.x, 0);
+        assert_eq!(last_move.y, 0);
+        assert_eq!(last_piece, Piece::O);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
+        let (_last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
+        let last_move = _last_move.unwrap();
+        assert_eq!(last_move.x, 1);
+        assert_eq!(last_move.y, 0);
+        assert_eq!(last_piece, Piece::X);
+        
     }
 }

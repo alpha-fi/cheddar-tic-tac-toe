@@ -21,4 +21,10 @@ impl Piece {
             _ => Piece::O
         }
     }
+    pub fn to_string(self) -> String {
+        match self {
+            Piece::X => String::from("X"),
+            Piece::O => String::from("O"),
+        }
+    }
 }

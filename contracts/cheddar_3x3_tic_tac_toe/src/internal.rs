@@ -116,14 +116,12 @@ impl Contract {
 
             self.internal_distribute_fee(&token_id, fees_amount, winner_id);
             self.internal_update_stats(
-                Some(&token_id), 
                 winner_id, 
                 UpdateStatsAction::AddWonGame, 
                 None, 
                 None
             );
             self.internal_update_stats(
-                Some(&token_id), 
                 winner_id, 
                 UpdateStatsAction::AddTotalReward, 
                 None, 
@@ -167,7 +165,6 @@ impl Contract {
             if computed_referrer_fee > 0 {
                 log!("Affiliate reward for @{} is {}", referrer_id, computed_referrer_fee);
                 self.internal_update_stats(
-                    Some(token_id), 
                     &referrer_id, 
                     UpdateStatsAction::AddAffiliateReward, 
                     None, 
@@ -201,7 +198,6 @@ impl Contract {
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
         
         self.internal_update_stats(
-            None, 
             &looser, 
             UpdateStatsAction::AddPenaltyGame, 
             None, 
@@ -254,8 +250,8 @@ impl Contract {
 
     pub (crate) fn internal_add_referrer(&mut self, player_id: &AccountId, referrer_id: &AccountId) {
         if self.stats.get(player_id).is_none() && self.is_account_exists(referrer_id) {
-            self.internal_update_stats(None, player_id, UpdateStatsAction::AddReferral, Some(referrer_id.clone()), None);
-            self.internal_update_stats(None, referrer_id, UpdateStatsAction::AddAffiliate, Some(player_id.clone()), None);
+            self.internal_update_stats(player_id, UpdateStatsAction::AddReferral, Some(referrer_id.clone()), None);
+            self.internal_update_stats(referrer_id, UpdateStatsAction::AddAffiliate, Some(player_id.clone()), None);
             log!("Referrer {} added for {}", referrer_id, player_id);
         } else {
             log!("Referrer was not added")

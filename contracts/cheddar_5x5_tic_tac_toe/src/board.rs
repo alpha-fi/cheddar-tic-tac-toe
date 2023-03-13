@@ -35,9 +35,9 @@ pub struct Coords {
 
 #[derive(BorshSerialize, BorshDeserialize)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug))]
-// #[serde(crate = "near_sdk::serde")]
 pub struct Board {
     pub tiles: UnorderedMap<Coords, Piece>,
+    pub last_move: Option<Coords>,
     /// X or O: who is currently playing
     pub current_piece: Piece,
     pub winner: Option<Winner>,
@@ -52,6 +52,7 @@ impl Board {
             tiles: UnorderedMap::new(StorageKey::GameBoard { game_id }),
             current_piece: Piece::O,
             winner: None,
+            last_move: None,
         }
     }
     pub fn check_move(&self, coords: &Coords) -> Result<(), MoveError> {
@@ -204,10 +205,10 @@ impl Board {
             return;
         }
         if self.check_winner(coords) {
-            if self.current_piece == Piece::X {
+            if self.current_piece.other() == Piece::X {
                 self.winner = Some(Winner::X);
                 print!("X is the winner");
-            } else if self.current_piece == Piece::O {
+            } else if self.current_piece.other() == Piece::O {
                 self.winner = Some(Winner::O);
                 print!("O is the winner");
             }
@@ -224,6 +225,17 @@ impl Board {
             }
         }
         return Tiles { o_coords, x_coords };
+    }
+    pub fn get_last_move(&self) -> Option<Coords> {
+        return self.last_move.clone();
+    }
+    pub fn get_last_move_piece(&self) -> Piece {
+        if self.current_piece == Piece::O {
+            return Piece::X;
+        } else {
+            return Piece::O;
+        }
+
     }
 }
 #[cfg(all(test, not(target_arch = "wasm32")))]

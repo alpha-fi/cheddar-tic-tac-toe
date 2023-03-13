@@ -12,17 +12,16 @@ pub(crate) const GAS_FOR_FT_TRANSFER: Gas = Gas(Gas::ONE_TERA.0 * 10);
 pub(crate) const MAX_FEES: u16 = 1000; // 10%
 pub(crate) const BASIS_P: u16 = 10000; // 100%
 pub(crate) const TIMEOUT_WIN: u64 = 300000000000; // 5 minutes timeout
-
-pub(crate) const MIN_DEPOSIT_NEAR: Balance = ONE_NEAR / 10; // 0.1 NEAR
+pub(crate) const MIN_DEPOSIT_CHEDDAR: Balance =  10; //TODO: how much the minimum deposit should be?
 
 pub(crate) type TokenContractId = AccountId;
 pub(crate) type GameId = u64;
 pub(crate) type AffiliateId = AccountId;
 
 /// This constant can be used to set the board size
-pub(crate) const BOARD_SIZE: usize = 25;
-pub(crate) const MAX_NUM_TURNS: u64 = (BOARD_SIZE*BOARD_SIZE) as u64;
-pub(crate) const PLAYERS_NUM: usize = 2;
+pub(crate) const BOARD_SIZE: u8 = 25;
+pub(crate) const MAX_NUM_TURNS: u64 = BOARD_SIZE as u64 *BOARD_SIZE as u64;
+
 
 /// Returns true if the promise was failed. Otherwise returns false.
 /// Fails if called outside a callback that received 1 promise result.

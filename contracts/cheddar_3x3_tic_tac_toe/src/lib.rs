@@ -255,8 +255,8 @@ impl Contract {
                 self.internal_add_referrer(&player_2_id, &referrer_id);
             }
 
-            self.internal_update_stats(Some(&token_id), &player_1_id, UpdateStatsAction::AddPlayedGame, None, None);
-            self.internal_update_stats(Some(&token_id), &player_2_id, UpdateStatsAction::AddPlayedGame, None, None);
+            self.internal_update_stats(&player_1_id, UpdateStatsAction::AddPlayedGame, None, None);
+            self.internal_update_stats(&player_2_id, UpdateStatsAction::AddPlayedGame, None, None);
             game_id
         } else {
             panic!("Your opponent is not ready");
@@ -445,7 +445,6 @@ impl Contract {
         };
 
         self.internal_update_stats(
-            Some(&game.reward().token_id), 
             &looser, 
             UpdateStatsAction::AddPenaltyGame, 
             None, 
@@ -765,15 +764,8 @@ mod tests {
         assert!(
             player_2_stats.victories_num == 0 && player_1_stats.victories_num == 1
         );   
-        assert_eq!(
-            player_1_stats.total_reward.clone(), Vec::from([
-                (
-                    "near".parse().unwrap(), 
-                    (2 * ONE_NEAR - ((2 * ONE_NEAR / BASIS_P as u128 )* MIN_FEES as u128))
-                )
-            ])
-        );
-        assert!(player_2_stats.total_reward.is_empty());
+        assert_eq!(player_1_stats.total_reward, (2 * ONE_NEAR - ((2 * ONE_NEAR / BASIS_P as u128 )* MIN_FEES as u128)));
+        assert_eq!(player_2_stats.total_reward, 0);
         // cheddar game
 
         testing_env!(ctx
@@ -933,9 +925,8 @@ mod tests {
             player_1_stats.victories_num == 0 && player_2_stats.victories_num == 1
         );
         assert_eq!(
-            player_2_stats.total_reward, Vec::from([(acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * MIN_FEES as u128)))]) 
-        );
-        assert!(player_1_stats.total_reward.is_empty());
+            player_2_stats.total_reward, (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128) * MIN_FEES as u128) ));
+        assert_eq!(player_1_stats.total_reward, 0);
     }
     #[test]
     fn test_game_basics() {
@@ -997,12 +988,8 @@ mod tests {
         assert!(
             player_2_stats.victories_num == 0 && player_1_stats.victories_num == 1
         );   
-        assert_eq!(
-            player_1_stats.total_reward.clone(), Vec::from([
-                (acc_cheddar(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* MIN_FEES as u128)))
-            ])
-        );
-        assert!(player_2_stats.total_reward.is_empty());
+        assert_eq!(player_1_stats.total_reward,(2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* MIN_FEES as u128)));
+        assert_eq!(player_2_stats.total_reward, 0);
     }
 
     #[test]
@@ -1511,15 +1498,7 @@ mod tests {
         ctr.claim_timeout_win(&game_id);
         assert!(ctr.get_stats(&player_1).victories_num == 1);
         assert!(ctr.get_stats(&player_2).victories_num == 0);
-        assert_eq!(
-            ctr.get_stats(&player_1).total_reward,
-            Vec::from([
-                (
-                    acc_cheddar(),
-                    (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)) 
-                )
-            ])
-        )
+        assert_eq!(ctr.get_stats(&player_1).total_reward, (2 * ONE_CHEDDAR - (2 * ONE_CHEDDAR / BASIS_P as u128 * MIN_FEES as u128)));
     }
     #[test]
     fn test_claim_timeout_win_when_no_timeout() {
