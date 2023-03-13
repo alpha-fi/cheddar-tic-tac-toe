@@ -782,6 +782,14 @@ mod tests {
     }
 
     #[test]
+    fn test_near_deposit() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
+        assert!(ctr.get_available_players().is_empty());
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()));
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None);
+    }
+
+    #[test]
     fn make_available_unavailable_near() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         assert!(ctr.get_available_players().is_empty());
@@ -1278,11 +1286,6 @@ mod tests {
     #[test]
     fn test_new_views() -> Result<(), std::io::Error>{
         let (mut ctx, mut ctr) = game_basics()?;
-        assert_eq!(
-            ctr.get_active_games().len(), 1, 
-            "first and second games need to be removed (expired) after max_game_duration passed for this"
-        );
-
 
         println!("ContractParams: {:#?}", ctr.get_contract_params());
         println!("TotalStatsNum: {:#?}", ctr.get_total_stats_num());

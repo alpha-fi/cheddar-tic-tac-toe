@@ -178,4 +178,7 @@ impl Contract {
 
         result
     }
+    pub fn get_max_game_duration(&self) -> u64 {
+        return self.max_game_duration;
+    }
 }

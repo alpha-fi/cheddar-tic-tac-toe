@@ -93,7 +93,7 @@ impl Board {
             return true;
         }
         c = position.clone();
-        for _ in 1..=max(4, BOARD_SIZE - 1 - position.x as usize) {
+        for _ in 1..=max(4, BOARD_SIZE - 1 - position.x) {
             c.x = c.x + 1;
             if self.tiles.get(&c) == expected {
                 counter += 1;
@@ -119,7 +119,7 @@ impl Board {
             return true;
         }
         c = position.clone();
-        for _ in 1..=max(4, BOARD_SIZE - 1 - position.y as usize) {
+        for _ in 1..=max(4, BOARD_SIZE - 1 - position.y) {
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
                 counter += 1;
@@ -152,7 +152,7 @@ impl Board {
             return true;
         }
         c = position.clone();
-        for _ in 1..=max(4, BOARD_SIZE - 1 - max(position.x, position.y) as usize) {
+        for _ in 1..=max(4, BOARD_SIZE - 1 - max(position.x, position.y)) {
             c.x = c.x + 1;
             c.y = c.y + 1;
             if self.tiles.get(&c) == expected {
@@ -227,7 +227,7 @@ impl Board {
         return Tiles { o_coords, x_coords };
     }
     pub fn get_last_move(&self) -> Coords {
-        return self.last_move.unwrap().clone();
+        return self.last_move.clone().unwrap();
     }
     pub fn get_last_move_piece(&self) -> Piece {
         if self.current_piece == Piece::O {
