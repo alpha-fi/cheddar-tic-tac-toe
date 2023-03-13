@@ -59,7 +59,7 @@ impl Board {
         if self.winner.is_some() {
             return Err(MoveError::GameOver);
         }
-        if coords.y >= BOARD_SIZE as u8 || coords.x >= BOARD_SIZE as u8 {
+        if coords.y >= BOARD_SIZE || coords.x >= BOARD_SIZE {
             return Err(MoveError::InvalidPosition {
                 row: coords.y,
                 col: coords.x,
@@ -205,10 +205,10 @@ impl Board {
             return;
         }
         if self.check_winner(coords) {
-            if self.current_piece == Piece::X {
+            if self.current_piece.other() == Piece::X {
                 self.winner = Some(Winner::X);
                 print!("X is the winner");
-            } else if self.current_piece == Piece::O {
+            } else if self.current_piece.other() == Piece::O {
                 self.winner = Some(Winner::O);
                 print!("O is the winner");
             }
@@ -226,8 +226,8 @@ impl Board {
         }
         return Tiles { o_coords, x_coords };
     }
-    pub fn get_last_move(&self) -> Coords {
-        return self.last_move.clone().unwrap();
+    pub fn get_last_move(&self) -> Option<Coords> {
+        return self.last_move.clone();
     }
     pub fn get_last_move_piece(&self) -> Piece {
         if self.current_piece == Piece::O {
@@ -261,14 +261,14 @@ mod test {
 
         // make move
         let result = board.check_move(&Coords {
-            x: BOARD_SIZE as u8,
-            y: BOARD_SIZE as u8,
+            x: BOARD_SIZE,
+            y: BOARD_SIZE,
         });
         assert_eq!(
             result,
             Err(MoveError::InvalidPosition {
-                row: BOARD_SIZE as u8,
-                col: BOARD_SIZE as u8
+                row: BOARD_SIZE,
+                col: BOARD_SIZE
             })
         );
     }

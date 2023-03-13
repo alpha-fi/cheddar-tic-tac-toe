@@ -233,7 +233,7 @@ impl Contract {
         }
     }
 
-    pub fn get_last_move(&self, game_id: &GameId) -> (Coords, Piece){
+    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece){
         let game = self.internal_get_game(game_id);
         return (game.board.get_last_move(), game.current_piece.other());
     }
@@ -257,6 +257,7 @@ impl Contract {
                 game.board.last_move = Some(coords.clone());
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
+                game.board.current_piece = game.current_piece;
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
                 game.board.update_winner(&coords);
@@ -306,9 +307,11 @@ impl Contract {
                         GameState::Finished,
                         "Cannot stop. Game in progress"
                     );
+                    let winner = game.board.winner;
+
                     self.games.remove(game_id);
                     
-                    return game.board.winner;
+                    return winner;
                 };
             },
             Err(e) => match e {
@@ -622,7 +625,7 @@ mod tests {
         ctr: &mut Contract,
         user: &AccountId,
         game_id: &GameId,
-    ) -> (Coords, Piece) {
+    ) -> (Option<Coords>, Piece) {
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .build());
@@ -948,6 +951,12 @@ mod tests {
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
+        // _ O O _ X
+        // _ O _ X _
+        // _ O X _ _
+        // _ X O _ _
+        // X _ _ _ _
+
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 1);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 4);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 1);
@@ -958,6 +967,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 3);
         let winner = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
+        assert_eq!(winner,Some(Winner::X));
 
         let player_1_stats = ctr.get_stats(&user());
         let player_2_stats = ctr.get_stats(&&opponent());
@@ -967,12 +977,59 @@ mod tests {
             player_1_stats.games_played == player_2_stats.games_played
         );
         assert!(
-            player_2_stats.victories_num == 1 && player_1_stats.victories_num == 0
+            player_1_stats.victories_num == 1 && player_2_stats.victories_num == 0
         );   
         assert_eq!(
-            player_2_stats.total_reward.clone(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
+            player_1_stats.total_reward.clone(), (2 * ONE_CHEDDAR - ((2 * ONE_CHEDDAR / BASIS_P as u128 )* 10)))
             ;
-        assert_eq!(player_1_stats.total_reward, 0);
+        assert_eq!(player_2_stats.total_reward, 0);
+    }
+    #[test]
+    fn test_game_basics_2() {
+        let (mut ctx, mut ctr) = setup_contract(user(), Some(10), None,  Some(MIN_GAME_DURATION_SEC));
+        assert!(ctr.get_available_players().is_empty());
+        let gc1 = GameConfigArgs { 
+            opponent_id: Some(opponent()), 
+            referrer_id: Some(referrer()) 
+        };
+        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
+        let gc2 = GameConfigArgs { 
+            opponent_id: Some(user()), 
+            referrer_id: None 
+        };
+        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
+        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
+        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        
+        let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
+        
+        let game = ctr.internal_get_game(&game_id);
+        let player_1 = game.current_player_account_id().clone();
+        let player_2 = game.next_player_account_id().clone();
+
+        assert_ne!(player_1, game.next_player_account_id());
+        assert_eq!(player_1, game.players.0);
+        assert_eq!(player_2, game.players.1);
+        assert_eq!(game.board.current_piece, Piece::O);
+
+        assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
+
+        // _ O O _ X
+        // _ O _ X _
+        // _ O X _ _
+        // _ X O _ _
+        // X _ _ _ _
+
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 4);
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 3);
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 2, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
+        make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 0);
+        make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
+        print_tiles(&ctr.internal_get_game(&game_id).board.to_tiles());
+        let winner = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 0);
         assert_eq!(winner,Some(Winner::O));
     }
 
@@ -1520,12 +1577,14 @@ mod tests {
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);
-        let (last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
+        let (_last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_1, &game_id);
+        let last_move = _last_move.unwrap();
         assert_eq!(last_move.x, 0);
         assert_eq!(last_move.y, 0);
         assert_eq!(last_piece, Piece::O);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 0, 1);
-        let (last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
+        let (_last_move, last_piece) = get_last_move(&mut ctx, &mut ctr, &player_2, &game_id);
+        let last_move = _last_move.unwrap();
         assert_eq!(last_move.x, 1);
         assert_eq!(last_move.y, 0);
         assert_eq!(last_piece, Piece::X);
