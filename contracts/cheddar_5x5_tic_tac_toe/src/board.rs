@@ -227,7 +227,7 @@ impl Board {
         return Tiles { o_coords, x_coords };
     }
     pub fn get_last_move(&self) -> Coords {
-        return self.last_move.clone().unwrap();
+        return self.last_move.unwrap().clone();
     }
     pub fn get_last_move_piece(&self) -> Piece {
         if self.current_piece == Piece::O {
