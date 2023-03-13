@@ -27,9 +27,8 @@ deploy-testnet:
 deploy-dev:
 #rm neardev/tic_tac_toe/*
 	@near dev-deploy --wasmFile ../../res/cheddar_big_tic_tac_toe.wasm  \
-                --initFunction "new" \
                 --projectKeyDirectory ./neardev/ \
-                --initArgs '{"cheddar": "'${CHEDDAR}'", "min_deposit": ${MIN_DEPOSIT}}'
+                'new' '{"cheddar": "'${CHEDDAR}'", "min_deposit": ${MIN_DEPOSIT}}'
 
 show-dev-account:
 	cat neardev/tic_tac_toe/dev-account
