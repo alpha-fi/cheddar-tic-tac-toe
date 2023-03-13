@@ -743,10 +743,10 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 1);
         make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 0, 0);
         make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 1, 1);
-       make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 2);
-       make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 2);
-     make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 0);
-     make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 2, 1);
+        make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 2);
+        make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 0, 2);
+        make_move(&mut ctx, &mut ctr, &player_2_n, &game_id_near, 2, 0);
+        make_move(&mut ctx, &mut ctr, &player_1_n, &game_id_near, 2, 1);
 
 
         let player_1_stats = ctr.get_stats(&opponent2);
@@ -1278,6 +1278,11 @@ mod tests {
     #[test]
     fn test_new_views() -> Result<(), std::io::Error>{
         let (mut ctx, mut ctr) = game_basics()?;
+        assert_eq!(
+            ctr.get_active_games().len(), 1, 
+            "first and second games need to be removed (expired) after max_game_duration passed for this"
+        );
+
 
         println!("ContractParams: {:#?}", ctr.get_contract_params());
         println!("TotalStatsNum: {:#?}", ctr.get_total_stats_num());
