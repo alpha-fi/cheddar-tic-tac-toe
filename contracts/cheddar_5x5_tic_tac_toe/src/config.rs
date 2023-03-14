@@ -1,7 +1,7 @@
 use crate::*;
 
-/// 2 HOURS in seconds
-const MAX_GAME_DURATION_SEC: u64 = 5 * 60 * 60;
+/// 4 HOURS in seconds
+pub (crate) const MAX_GAME_DURATION_SEC: u64 = 4 * 60 * 60;
 /// 25 MINUTES in seconds
 const MIN_MAX_GAME_DURATION_SEC: u64 = 25 * 60;
 

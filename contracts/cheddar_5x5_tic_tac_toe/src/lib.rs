@@ -80,8 +80,8 @@ impl Contract {
     pub fn new(cheddar: AccountId, min_deposit: Balance, config: Option<Config>) -> Self {
         let config = config.unwrap_or(Config {
             fee: MAX_FEES,
-            referrer_fee_share: 2000, // 20%
-            max_game_duration_sec: sec_to_nano(60 * 60), // 1h
+            referrer_fee_share: 1000, // 10%
+            max_game_duration_sec: MAX_GAME_DURATION_SEC,
             max_stored_games:    50
         });
         let min_min_deposit = MIN_DEPOSIT_CHEDDAR;
@@ -97,7 +97,7 @@ impl Contract {
             max_game_duration: sec_to_nano(config.max_game_duration_sec as u32),
             referrer_fee_share: config.referrer_fee_share,
             last_update_timestamp: 0,
-            max_turn_duration: sec_to_nano(config.max_game_duration_sec as u32 / MAX_NUM_TURNS as u32),
+            max_turn_duration: sec_to_nano(60),
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames)
         }

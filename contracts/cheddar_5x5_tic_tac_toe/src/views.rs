@@ -178,7 +178,10 @@ impl Contract {
 
         result
     }
-    pub fn get_max_game_duration(&self) -> u64 {
-        return self.max_game_duration;
+    pub fn get_max_game_duration(&self) -> u32 {
+        return nano_to_sec(self.max_game_duration).into();
+    }
+    pub fn get_max_turn_duration(&self) -> u32 {
+        return nano_to_sec(self.max_turn_duration.into());
     }
 }
