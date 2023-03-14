@@ -3,7 +3,7 @@ use near_sdk::{
     Promise, PromiseOrValue, PromiseResult, assert_one_yocto
 };
 use near_sdk::{
-    env, ext_contract, log, near_bindgen, ONE_NEAR, ONE_YOCTO, require
+    env, ext_contract, log, near_bindgen, ONE_YOCTO, require
 };
 use near_sdk::json_types::U128;
 use near_sdk::borsh::{self, BorshSerialize, BorshDeserialize};
@@ -80,7 +80,7 @@ impl Contract {
     pub fn new(cheddar: AccountId, min_deposit: Balance, config: Option<Config>) -> Self {
         let config = config.unwrap_or(Config {
             fee: MAX_FEES,
-            referrer_fee_share: 1000, // 10%
+            referrer_fee_share: 500, // 5%
             max_game_duration_sec: MAX_GAME_DURATION_SEC,
             max_stored_games:    50
         });
@@ -97,7 +97,7 @@ impl Contract {
             max_game_duration: sec_to_nano(config.max_game_duration_sec as u32),
             referrer_fee_share: config.referrer_fee_share,
             last_update_timestamp: 0,
-            max_turn_duration: sec_to_nano(60),
+            max_turn_duration: sec_to_nano(2*60),
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames)
         }
@@ -493,7 +493,7 @@ impl Contract {
 mod tests {
     use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
     use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::{testing_env, Balance};
+    use near_sdk::{testing_env, Balance, ONE_NEAR};
     use crate::views::{GameView, Tiles};
 
     use super::*;
