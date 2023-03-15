@@ -233,14 +233,34 @@ impl Contract {
         }
     }
 
-    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece){
+    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece, Option<GameResult>, Option<u64>){
         let game = self.internal_get_game(game_id);
-        return (game.board.get_last_move(), game.current_piece.other());
+        let mut game_result = None;
+        if game.board.winner.is_some() {
+            let winner = game.board.winner.clone().unwrap();
+            game_result = match winner {
+                Winner::O => Some(GameResult::Win(game.players.0)),
+                Winner::X => Some(GameResult::Win(game.players.1)),
+                Winner::Tie => Some(GameResult::Tie),
+            }
+        }
+        return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
+    }
+    fn get_game_result(&self, winner_piece: Option<Winner>, game_id: &GameId) -> Option<GameResult> {
+        if winner_piece.is_none() {
+            return None;
+        }
+        let game = self.get_game(game_id);
+        return match winner_piece.unwrap() {
+            Winner::O => Some(GameResult::Win(game.player1)),
+            Winner::X => Some(GameResult::Win(game.player2)),
+            Winner::Tie => Some(GameResult::Tie)
+        }
     }
     
 
     // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
-    pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<Winner> {
+    pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<GameResult> {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
@@ -307,11 +327,11 @@ impl Contract {
                         GameState::Finished,
                         "Cannot stop. Game in progress"
                     );
-                    let winner = game.board.winner;
+                    let game_result = self.get_game_result(game.board.winner, game_id);
 
                     self.games.remove(game_id);
                     
-                    return winner;
+                    return game_result;
                 };
             },
             Err(e) => match e {
@@ -338,10 +358,10 @@ impl Contract {
                     log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, cur_timestamp - game.initiated_at);
                     // looser - current player
                     self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                    return game.board.winner;
+                    return self.get_game_result(game.board.winner, game_id);
                 } else {
                     self.internal_update_game(game_id, &game);
-                    return game.board.winner;
+                    return self.get_game_result(game.board.winner, game_id);
                 }
             }
 
@@ -350,17 +370,17 @@ impl Contract {
                 log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, game.last_turn_timestamp - previous_turn_timestamp);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.winner;
+                return self.get_game_result(game.board.winner, game_id);
             };
 
             if game.current_duration <= self.max_game_duration {
                 self.internal_update_game(game_id, &game);
-                return game.board.winner;
+                return self.get_game_result(game.board.winner, game_id);
             } else {
                 log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.current_duration);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return game.board.winner;
+                return self.get_game_result(game.board.winner, game_id);
             }
         } else {
             panic!("Something wrong with game id: {} state", game_id)
@@ -614,7 +634,7 @@ mod tests {
         game_id: &GameId,
         row: u8,
         col: u8
-    ) -> Option<Winner> {
+    ) -> Option<GameResult> {
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .build());
@@ -629,7 +649,8 @@ mod tests {
         testing_env!(ctx
             .predecessor_account_id(user.clone())
             .build());
-        ctr.get_last_move(game_id)  
+        let (coords, piece ,_, _) = ctr.get_last_move(game_id);
+        return (coords, piece);
     }
 
     fn stop_game(
@@ -967,7 +988,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 3);
         let winner = make_move(&mut ctx, &mut ctr, &player_2, &game_id, 4, 0);
-        assert_eq!(winner,Some(Winner::X));
+        assert_eq!(winner ,Some(GameResult::Win(player_2)));
 
         let player_1_stats = ctr.get_stats(&user());
         let player_2_stats = ctr.get_stats(&&opponent());
@@ -1030,7 +1051,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
         print_tiles(&ctr.internal_get_game(&game_id).board.to_tiles());
         let winner = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 0);
-        assert_eq!(winner,Some(Winner::O));
+        assert_eq!(winner,Some(GameResult::Win(player_1)));
     }
 
     #[test]

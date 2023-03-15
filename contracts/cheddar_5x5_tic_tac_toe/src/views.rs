@@ -1,7 +1,7 @@
 use crate::*;
 use std::collections::HashMap;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub enum GameResult {
     Win(AccountId),
