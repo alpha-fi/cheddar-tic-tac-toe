@@ -237,9 +237,7 @@ impl Contract {
         let game = self.internal_get_game(game_id);
         return (game.board.get_last_move(), game.current_piece.other());
     }
-    
 
-    // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<Winner> {
         let cur_timestamp = env::block_timestamp();
         //checkpoint
