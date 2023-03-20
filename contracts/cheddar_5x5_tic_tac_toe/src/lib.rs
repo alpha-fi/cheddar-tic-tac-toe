@@ -280,9 +280,7 @@ impl Contract {
             Winner::Tie => Some(GameResult::Tie)
         }
     }
-    
 
-    // TODO: we don't need to return the board: UI should update by checking if transaction failed or not.
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<GameResult> {
         let cur_timestamp = env::block_timestamp();
         //checkpoint

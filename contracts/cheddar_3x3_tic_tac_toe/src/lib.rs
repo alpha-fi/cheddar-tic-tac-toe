@@ -99,7 +99,7 @@ impl Contract {
                 MAX_FEES,
                 // 1 hour for max_game_duration will be set
                 // also 400 sec will be max turn duration (max_game_duration / MAX_TURNS_NUM)
-                sec_to_nano(5 * 60),
+                sec_to_nano(MAX_GAME_DURATION_SEC),
                 // 95% refferer fees from 10% total fees
                 9500,
                 // 50 last games will be stored
