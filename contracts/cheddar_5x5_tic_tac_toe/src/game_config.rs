@@ -54,7 +54,7 @@ impl GameConfig {
             deposit, 
             opponent_id: None, 
             referrer_id: None,
-            created_at: env::block_timestamp()
+            created_at: env::block_timestamp(),
         }
     }
     /// `GameConfig` from transfer message
@@ -68,7 +68,7 @@ impl GameConfig {
             deposit, 
             opponent_id: game_args.opponent_id.clone(), 
             referrer_id: game_args.referrer_id.clone(),
-            created_at: env::block_timestamp()
+            created_at: env::block_timestamp(),
         }
     }
 }

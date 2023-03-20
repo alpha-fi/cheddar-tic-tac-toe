@@ -22,6 +22,8 @@ pub(crate) type AffiliateId = AccountId;
 pub(crate) const BOARD_SIZE: u8 = 25;
 pub(crate) const MAX_NUM_TURNS: u64 = BOARD_SIZE as u64 *BOARD_SIZE as u64;
 
+pub(crate) const AVAILABLE_FOR_DEFAULT: u64 = 2 * 60 * 1_000_000_000; //2 minutes in nanosecods
+
 
 /// Returns true if the promise was failed. Otherwise returns false.
 /// Fails if called outside a callback that received 1 promise result.

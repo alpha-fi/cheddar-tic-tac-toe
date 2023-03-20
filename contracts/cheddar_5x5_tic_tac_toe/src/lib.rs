@@ -1,3 +1,5 @@
+use std::fs::create_dir;
+
 use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, Duration, PanicOnDefault,
     Promise, PromiseOrValue, PromiseResult, assert_one_yocto
@@ -44,7 +46,14 @@ pub enum StorageKey {
     Stats,
     Affiliates {account_id : AccountId},
     TotalRewards {account_id : AccountId},
-    TotalAffiliateRewards {account_id : AccountId}
+    TotalAffiliateRewards {account_id : AccountId},
+    PlayerAvailability,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct PlayerAvailability {
+    available_from: u64, //timestamp in nanoseconds
+    available_to: u64,
 }
 
 #[near_bindgen]
@@ -70,7 +79,8 @@ pub struct Contract {
     max_turn_duration: u64,
     /// storage for printing results
     pub max_stored_games: u8,
-    pub stored_games: UnorderedMap<GameId, GameLimitedView>
+    pub stored_games: UnorderedMap<GameId, GameLimitedView>,
+    pub available_from_to: UnorderedMap<AccountId, PlayerAvailability>,
 }
 
 #[near_bindgen]
@@ -99,7 +109,8 @@ impl Contract {
             last_update_timestamp: 0,
             max_turn_duration: sec_to_nano(2*60),
             max_stored_games: config.max_stored_games,
-            stored_games: UnorderedMap::new(StorageKey::StoredGames)
+            stored_games: UnorderedMap::new(StorageKey::StoredGames),
+            available_from_to: UnorderedMap::new(StorageKey::PlayerAvailability)
         }
     }
 
@@ -108,6 +119,7 @@ impl Contract {
     pub fn make_available(
         &mut self,
         game_config: Option<GameConfigNear>,
+        available_for: u64,
     ) {
         let cur_timestamp = env::block_timestamp();
         // checkpoint
@@ -131,9 +143,10 @@ impl Contract {
                 deposit,
                 opponent_id,
                 referrer_id: referrer_id.clone(),
-                created_at: cur_timestamp
+                created_at: cur_timestamp,
             }
         );
+        self.available_from_to.insert(account_id, &PlayerAvailability { available_from: cur_timestamp, available_to: cur_timestamp + available_for});
         
         self.internal_check_player_available(&account_id);
 
@@ -233,7 +246,16 @@ impl Contract {
         }
     }
 
-    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece, Option<GameResult>, Option<u64>){
+    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece, Option<GameResult>, Option<u32>){
+        let stored_game = self.stored_games.get(game_id);
+        if stored_game.is_some() {
+            let stored_game_unwraped = stored_game.unwrap();
+            if stored_game_unwraped.last_move.is_none() {
+                return (None, Piece::X, Some(stored_game_unwraped.game_result), None);
+            }
+            let (coords, piece) = stored_game_unwraped.last_move.unwrap();
+            return (Some(coords), piece, Some(stored_game_unwraped.game_result), None);
+        } else {
         let game = self.internal_get_game(game_id);
         let mut game_result = None;
         if game.board.winner.is_some() {
@@ -244,7 +266,8 @@ impl Contract {
                 Winner::Tie => Some(GameResult::Tie),
             }
         }
-        return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
+        return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(nano_to_sec(game.last_turn_timestamp)));
+    }
     }
     fn get_game_result(&self, winner_piece: Option<Winner>, game_id: &GameId) -> Option<GameResult> {
         if winner_piece.is_none() {
@@ -319,6 +342,7 @@ impl Contract {
                             balance
                         },
                         tiles: game.board.to_tiles(),
+                        last_move: Some((coords, game.current_piece.other())),
                     };
 
                     self.internal_store_game(game_id, &game_to_store);
@@ -389,7 +413,7 @@ impl Contract {
     }
 
     #[payable]
-    pub fn give_up(&mut self, game_id: &GameId) {
+    pub fn give_up(&mut self, game_id: &GameId) -> Option<GameResult>{
         assert_one_yocto();
         let mut game: Game = self.internal_get_game(&game_id);
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
@@ -410,6 +434,15 @@ impl Contract {
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
 
+        let last_move;
+
+        if game.board.last_move.is_some() {
+            let last_move_piece = game.board.tiles.get(&game.board.last_move.clone().unwrap());
+            last_move = Some((game.board.last_move.clone().unwrap(), last_move_piece.unwrap()))
+        } else {
+            last_move = None;
+        }
+
         let game_to_store = GameLimitedView{
             game_result: GameResult::Win(winner),
             player1,
@@ -419,6 +452,7 @@ impl Contract {
                 balance
             },
             tiles: game.board.to_tiles(),
+            last_move: last_move
         };
 
         self.internal_store_game(game_id, &game_to_store);
@@ -428,6 +462,7 @@ impl Contract {
             "Cannot stop. Game in progress"
         );
         self.games.remove(game_id);
+        return Some(game_to_store.game_result)
     }
 
     // TODO: remove this
@@ -474,6 +509,7 @@ impl Contract {
                 balance
             },
             tiles: game.board.to_tiles(),
+            last_move: None
         };
 
         self.internal_store_game(game_id, &game_to_store);
@@ -485,15 +521,23 @@ impl Contract {
         self.games.remove(game_id);
     }
 
-    pub fn claim_timeout_win(&mut self, game_id: &GameId) {
+    pub fn claim_timeout_win(&mut self, game_id: &GameId) -> Option<GameResult> {
         let game: Game = self.internal_get_game(&game_id);
         let player = env::predecessor_account_id();
         if game.claim_timeout_win(player.clone()) == false {
             log!("can't claim the win, timeout didn't pass");
-            return;
+            return None;
         }
         let looser = game.get_opponent(&player);
         let balance = self.internal_distribute_reward(game_id, Some(&player));
+        let last_move;
+
+        if game.board.last_move.is_some() {
+            let last_move_piece = game.board.tiles.get(&game.board.last_move.clone().unwrap());
+            last_move = Some((game.board.last_move.clone().unwrap(), last_move_piece.unwrap()))
+        } else {
+            last_move = None;
+        }
         self.games.remove(game_id);
         let game_to_store = GameLimitedView{
             game_result: GameResult::Win(player.clone()),
@@ -504,8 +548,10 @@ impl Contract {
                 balance
             },
             tiles: game.board.to_tiles(),
+            last_move: last_move
         };
         self.internal_store_game(game_id, &game_to_store);
+        return Some(game_to_store.game_result);
     }
 }
 
@@ -574,7 +620,8 @@ mod tests {
         user: &AccountId,
         amount: Balance,
         opponent_id: Option<AccountId>, 
-        referrer_id: Option<AccountId> 
+        referrer_id: Option<AccountId> ,
+        available_for: u64
     ) {
         testing_env!(ctx
             .attached_deposit(amount)
@@ -584,7 +631,7 @@ mod tests {
         ctr.make_available(Some(GameConfigNear { 
             opponent_id, 
             referrer_id 
-        }));
+        }), available_for);
     }
 
     fn make_available_ft(
@@ -742,8 +789,8 @@ mod tests {
         let user2 = "user2".parse().unwrap();
         let opponent2 = "opponent2".parse().unwrap();
 
-        make_available_near(&mut ctx, &mut ctr, &user2, ONE_NEAR, None, None);
-        make_available_near(&mut ctx, &mut ctr, &opponent2, ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &user2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &opponent2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         let game_id_cheddar = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         let game_id_near = start_game(&mut ctx, &mut ctr, &user2, &opponent2);
@@ -809,16 +856,16 @@ mod tests {
     fn test_near_deposit() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()));
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
     }
 
     #[test]
     fn make_available_unavailable_near() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()));
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
                 token_id: near(), 
@@ -887,7 +934,7 @@ mod tests {
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
 
         make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
         start_game(&mut ctx, &mut ctr, &user(), &opponent());
     }
     #[test]
@@ -1372,9 +1419,9 @@ mod tests {
 
         println!("PenaltyUsers: {:#?}", ctr.get_penalty_users());
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         assert_eq!(ctr.get_available_players().len(), 3);
 
@@ -1389,15 +1436,15 @@ mod tests {
             .block_timestamp(ctr.max_game_duration + MAX_TIME_TO_BE_AVAILABLE + 2)
             .build()
         );
-        make_available_near(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         assert_eq!(ctr.get_available_players().len(), 1);
         assert_eq!(ctr.get_available_players()[0].0, "fourth".parse().unwrap());
 
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         // first game starts at (max_game_duration + MAX_TIME_TO_BE_AVAILABLE +2) timestamp
         let first_game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());

@@ -51,6 +51,7 @@ pub struct GameLimitedView {
     pub player2: AccountId,
     pub reward_or_tie_refund: GameDeposit,
     pub tiles: Tiles,
+    pub last_move: Option<(Coords, Piece)>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -98,7 +99,7 @@ impl From<&Game> for GameView {
 
 #[near_bindgen]
 impl Contract {
-    pub fn get_contract_params(&self) -> ContractParams {
+    pub fn get_contract_params(&mut self) -> ContractParams {
         let games: HashMap<u64, GameView> = self
             .games
             .iter()
@@ -147,7 +148,7 @@ impl Contract {
         self.min_deposit.into()
     }
 
-    pub fn get_available_players(&self) -> Vec<(AccountId, GameConfigView)> {
+    pub fn get_available_players(&mut self) -> Vec<(AccountId, GameConfigView)> {
         self.available_players
             .to_vec()
             .iter()
