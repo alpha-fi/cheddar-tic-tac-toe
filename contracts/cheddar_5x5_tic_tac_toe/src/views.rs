@@ -35,7 +35,7 @@ pub struct GameView {
     pub player2: AccountId,
     pub game_status: GameState,
     pub current_player: AccountId,
-    pub reward: GameDeposit,
+    pub total_bet: GameDeposit,
     pub tiles: Tiles,
     /* * */
     pub initiated_at_sec: u32,
@@ -88,7 +88,7 @@ impl From<&Game> for GameView {
             player2,
             game_status: g.game_state.clone(),
             current_player,
-            reward: g.reward(),
+            total_bet: g.reward(),
             tiles: g.board.to_tiles(),
             initiated_at_sec: nano_to_sec(g.initiated_at),
             last_turn_timestamp_sec: nano_to_sec(g.last_turn_timestamp),
@@ -148,7 +148,7 @@ impl Contract {
         self.min_deposit.into()
     }
 
-    pub fn get_available_players(&mut self) -> Vec<(AccountId, GameConfigView)> {
+    pub fn get_available_players(&self) -> Vec<(AccountId, GameConfigView)> {
         self.available_players
             .to_vec()
             .iter()

@@ -89,7 +89,7 @@ impl Board {
                 break;
             }
         }
-        if counter >= 2 {
+        if counter >= 5 {
             return true;
         }
         c = position.clone();
@@ -100,7 +100,7 @@ impl Board {
             } else {
                 break;
             }
-            if counter >= 2 {
+            if counter >= 5 {
                 return true;
             }
         }
@@ -115,7 +115,7 @@ impl Board {
                 break;
             }
         }
-        if counter >= 2 {
+        if counter >= 5 {
             return true;
         }
         c = position.clone();
@@ -126,7 +126,7 @@ impl Board {
             } else {
                 break;
             }
-            if counter >= 2 {
+            if counter >= 5 {
                 return true;
             }
         }
@@ -148,7 +148,7 @@ impl Board {
                 break;
             }
         }
-        if counter >= 2 {
+        if counter >= 5 {
             return true;
         }
         c = position.clone();
@@ -160,7 +160,7 @@ impl Board {
             } else {
                 break;
             }
-            if counter >= 2 {
+            if counter >= 5 {
                 return true;
             }
         }
@@ -177,7 +177,7 @@ impl Board {
                 break;
             }
         }
-        if counter >= 2 {
+        if counter >= 5 {
             return true;
         }
         c = position.clone();
@@ -189,7 +189,7 @@ impl Board {
             } else {
                 break;
             }
-            if counter >= 2 {
+            if counter >= 5 {
                 return true;
             }
         }
