@@ -551,6 +551,12 @@ impl Contract {
         self.internal_store_game(game_id, &game_to_store);
         return Some(game_to_store.game_result);
     }
+    
+    #[private]
+    pub fn update_fee(&mut self,  fee: u16) {
+        assert!(fee <= MAX_FEES, "fees must be in range 0..500 which corresponds to 0..5%");
+        self.service_fee = fee;
+    }
 }
 
 #[cfg(test)]
