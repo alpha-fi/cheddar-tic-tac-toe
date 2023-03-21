@@ -159,7 +159,9 @@ impl Game {
             self.current_player_account_id(),
             "Can't claim timeout win if it's your turn"
         );
-        //3. Check for timeout
+        //3. Check if the player invoking the method is in the game
+        assert!(self.contains_player_account_id(&player), "No access");
+        //4. Check for timeout
         let cur_timestamp = env::block_timestamp();
         if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN {
             return false;
