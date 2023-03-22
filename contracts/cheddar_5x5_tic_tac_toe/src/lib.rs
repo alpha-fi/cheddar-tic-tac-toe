@@ -52,7 +52,9 @@ pub enum StorageKey {
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct PlayerAvailability {
-    available_from: u64, //timestamp in nanoseconds
+    /// unix timestamp in seconds
+    available_from: u64, 
+    /// unix timestamp in seconds
     available_to: u64,
 }
 
