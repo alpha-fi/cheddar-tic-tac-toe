@@ -250,8 +250,7 @@ impl Contract {
 
     pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece, Option<GameResult>, Option<u32>){
         let stored_game = self.stored_games.get(game_id);
-        if stored_game.is_some() {
-            let stored_game_unwraped = stored_game.unwrap();
+        if let Some(game) = stored_game {
             if stored_game_unwraped.last_move.is_none() {
                 return (None, Piece::X, Some(stored_game_unwraped.game_result), None);
             }
