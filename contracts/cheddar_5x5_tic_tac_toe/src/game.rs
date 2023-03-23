@@ -168,4 +168,16 @@ impl Game {
         }
         true
     }
+
+    pub fn get_winner(&self) -> Option<GameResult> {
+        if self.board.winner.is_some() {
+            return match self.board.winner.clone().unwrap() {
+                Winner::O => Some(GameResult::Win(self.players.0.clone())),
+                Winner::X => Some(GameResult::Win(self.players.1.clone())),
+                Winner::Tie => Some(GameResult::Tie),
+            }
+        } else {
+            return None;
+        }
+    }
 }

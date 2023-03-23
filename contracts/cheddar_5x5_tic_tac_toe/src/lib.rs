@@ -82,7 +82,7 @@ pub struct Contract {
     /// storage for printing results
     pub max_stored_games: u8,
     pub stored_games: UnorderedMap<GameId, GameLimitedView>,
-    pub available_from_to: UnorderedMap<AccountId, PlayerAvailability>,
+    pub player_availability: UnorderedMap<AccountId, PlayerAvailability>,
 }
 #[near_bindgen]
 impl Contract {
@@ -111,7 +111,7 @@ impl Contract {
             max_turn_duration_sec: 2*60,
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames),
-            available_from_to: UnorderedMap::new(StorageKey::PlayerAvailability)
+            player_availability: UnorderedMap::new(StorageKey::PlayerAvailability)
         }
     }
 
@@ -146,7 +146,7 @@ impl Contract {
                 created_at: nano_to_sec(cur_timestamp),
             }
         );
-        self.available_from_to.insert(account_id, &PlayerAvailability { available_from: nano_to_sec(cur_timestamp), available_to: nano_to_sec(cur_timestamp) + available_for});
+        self.player_availability.insert(account_id, &PlayerAvailability { available_from: nano_to_sec(cur_timestamp), available_to: nano_to_sec(cur_timestamp) + available_for});
         
         self.internal_check_player_available(&account_id);
 
@@ -245,7 +245,7 @@ impl Contract {
             panic!("Your opponent is not ready");
         }
     }
-    /// returns coords, piece, game result and last turn timestamp
+    /// returns (coords, piece, game_result, last_turn_timestamp)
     pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece, Option<GameResult>, Option<Timestamp>){
         let stored_game = self.stored_games.get(game_id);
         if let Some(game) = stored_game {
@@ -256,15 +256,7 @@ impl Contract {
             return (Some(coords), piece, Some(game.game_result), None);
         } else {
         let game = self.internal_get_game(game_id);
-        let mut game_result = None;
-        if game.board.winner.is_some() {
-            let winner = game.board.winner.clone().unwrap();
-            game_result = match winner {
-                Winner::O => Some(GameResult::Win(game.players.0)),
-                Winner::X => Some(GameResult::Win(game.players.1)),
-                Winner::Tie => Some(GameResult::Tie),
-            }
-        }
+        let game_result = game.get_winner();
         return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
     }
     }
