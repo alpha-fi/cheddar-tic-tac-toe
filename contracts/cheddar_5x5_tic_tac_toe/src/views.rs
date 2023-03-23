@@ -23,8 +23,8 @@ pub struct ContractParams {
     pub games: HashMap<GameId, GameView>,
     pub available_players: Vec<(AccountId, GameConfigView)>,
     pub service_fee: u16,
-    pub max_game_duration: u32,
-    pub last_update_timestamp_sec: u32,
+    pub max_game_duration: u64,
+    pub last_update_timestamp_sec: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -38,9 +38,9 @@ pub struct GameView {
     pub total_bet: GameDeposit,
     pub tiles: Tiles,
     /* * */
-    pub initiated_at_sec: u32,
-    pub last_turn_timestamp_sec: u32,
-    pub current_duration_sec: u32,
+    pub initiated_at_sec: u64,
+    pub last_turn_timestamp_sec: u64,
+    pub current_duration_sec: u64,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -90,9 +90,9 @@ impl From<&Game> for GameView {
             current_player,
             total_bet: g.reward(),
             tiles: g.board.to_tiles(),
-            initiated_at_sec: nano_to_sec(g.initiated_at),
-            last_turn_timestamp_sec: nano_to_sec(g.last_turn_timestamp),
-            current_duration_sec: nano_to_sec(g.current_duration),
+            initiated_at_sec: g.initiated_at,
+            last_turn_timestamp_sec: g.last_turn_timestamp,
+            current_duration_sec: g.current_duration_sec,
         }
     }
 }
@@ -111,7 +111,7 @@ impl Contract {
             games,
             available_players,
             service_fee: self.service_fee,
-            max_game_duration: nano_to_sec(self.max_game_duration),
+            max_game_duration: nano_to_sec(self.max_game_duration_sec),
             last_update_timestamp_sec: nano_to_sec(self.last_update_timestamp),
         }
     }

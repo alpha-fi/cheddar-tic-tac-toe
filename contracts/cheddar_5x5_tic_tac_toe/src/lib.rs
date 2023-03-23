@@ -2,7 +2,7 @@ use std::fs::create_dir;
 
 use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, Duration, PanicOnDefault,
-    Promise, PromiseOrValue, PromiseResult, assert_one_yocto
+    Promise, PromiseOrValue, PromiseResult, assert_one_yocto, Timestamp
 };
 use near_sdk::{
     env, ext_contract, log, near_bindgen, ONE_YOCTO, require
@@ -52,7 +52,9 @@ pub enum StorageKey {
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct PlayerAvailability {
-    available_from: u64, //timestamp in nanoseconds
+    /// unix timestamp in seconds
+    available_from: u64, 
+    /// unix timestamp in seconds
     available_to: u64,
 }
 
@@ -69,20 +71,19 @@ pub struct Contract {
     next_game_id: GameId,
     /// service fee percentage in BASIS_P (see `config.rs`)
     service_fee: u16,
-    /// max expected game duration in nanoseconds (see `config.rs`)
-    max_game_duration: Duration,
+    /// max expected game duration in seconds (see `config.rs`)
+    max_game_duration_sec: u64,
     /// referrer fee percentage from service_fee_percentage in BASIS_P (see `config.rs`)
     referrer_fee_share: u16,
     /// system updates
-    pub last_update_timestamp: u64,
-    /// max expected turn duration in nanoseconds (max_game_duration / max possible turns num)
-    max_turn_duration: u64,
+    pub last_update_timestamp: Timestamp,
+    /// max expected turn duration in seconds (max_game_duration / max possible turns num)
+    max_turn_duration_sec: Duration,
     /// storage for printing results
     pub max_stored_games: u8,
     pub stored_games: UnorderedMap<GameId, GameLimitedView>,
     pub available_from_to: UnorderedMap<AccountId, PlayerAvailability>,
 }
-
 #[near_bindgen]
 impl Contract {
     #[init]
@@ -104,10 +105,10 @@ impl Contract {
             stats: UnorderedMap::new(StorageKey::Stats),
             next_game_id: 0,
             service_fee: config.fee,
-            max_game_duration: sec_to_nano(config.max_game_duration_sec as u32),
+            max_game_duration_sec: config.max_game_duration_sec,
             referrer_fee_share: config.referrer_fee_share,
             last_update_timestamp: 0,
-            max_turn_duration: sec_to_nano(2*60),
+            max_turn_duration_sec: 2*60,
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames),
             available_from_to: UnorderedMap::new(StorageKey::PlayerAvailability)
@@ -136,17 +137,16 @@ impl Contract {
         } else {
             (None, None)
         };
-
         self.available_players.insert(account_id,
             &GameConfig {
                 token_id: AccountId::new_unchecked("near".into()),
                 deposit,
                 opponent_id,
                 referrer_id: referrer_id.clone(),
-                created_at: cur_timestamp,
+                created_at: nano_to_sec(cur_timestamp),
             }
         );
-        self.available_from_to.insert(account_id, &PlayerAvailability { available_from: cur_timestamp, available_to: cur_timestamp + available_for});
+        self.available_from_to.insert(account_id, &PlayerAvailability { available_from: nano_to_sec(cur_timestamp), available_to: nano_to_sec(cur_timestamp) + available_for});
         
         self.internal_check_player_available(&account_id);
 
@@ -245,16 +245,15 @@ impl Contract {
             panic!("Your opponent is not ready");
         }
     }
-
-    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece, Option<GameResult>, Option<u32>){
+    /// returns coords, piece, game result and last turn timestamp
+    pub fn get_last_move(&self, game_id: &GameId) -> (Option<Coords>, Piece, Option<GameResult>, Option<Timestamp>){
         let stored_game = self.stored_games.get(game_id);
-        if stored_game.is_some() {
-            let stored_game_unwraped = stored_game.unwrap();
-            if stored_game_unwraped.last_move.is_none() {
-                return (None, Piece::X, Some(stored_game_unwraped.game_result), None);
+        if let Some(game) = stored_game {
+            if game.last_move.is_none() {
+                return (None, Piece::X, Some(game.game_result), None);
             }
-            let (coords, piece) = stored_game_unwraped.last_move.unwrap();
-            return (Some(coords), piece, Some(stored_game_unwraped.game_result), None);
+            let (coords, piece) = game.last_move.unwrap();
+            return (Some(coords), piece, Some(game.game_result), None);
         } else {
         let game = self.internal_get_game(game_id);
         let mut game_result = None;
@@ -266,7 +265,7 @@ impl Contract {
                 Winner::Tie => Some(GameResult::Tie),
             }
         }
-        return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(nano_to_sec(game.last_turn_timestamp)));
+        return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
     }
     }
     fn get_game_result(&self, winner_piece: Option<Winner>, game_id: &GameId) -> Option<GameResult> {
@@ -282,7 +281,7 @@ impl Contract {
     }
 
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<GameResult> {
-        let cur_timestamp = env::block_timestamp();
+        let cur_timestamp: Duration = nano_to_sec(env::block_timestamp()) as Duration;
         //checkpoint
         self.internal_ping_expired_games(cur_timestamp);
 
@@ -373,11 +372,11 @@ impl Contract {
             // this turn timestamp
             game.last_turn_timestamp = cur_timestamp;
             // this game duration 
-            game.current_duration = cur_timestamp - game.initiated_at;
+            game.current_duration_sec = cur_timestamp - game.initiated_at;
 
             if previous_turn_timestamp == 0 {
-                if cur_timestamp - game.initiated_at > self.max_turn_duration {
-                    log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, cur_timestamp - game.initiated_at);
+                if cur_timestamp - game.initiated_at > self.max_turn_duration_sec {
+                    log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration_sec, cur_timestamp - game.initiated_at);
                     // looser - current player
                     self.internal_stop_expired_game(game_id, env::predecessor_account_id());
                     return self.get_game_result(game.board.winner, game_id);
@@ -388,18 +387,18 @@ impl Contract {
             }
 
             // expired turn time scenario - too long movement from current player
-            if game.last_turn_timestamp - previous_turn_timestamp > self.max_turn_duration {
-                log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, game.last_turn_timestamp - previous_turn_timestamp);
+            if game.last_turn_timestamp - previous_turn_timestamp > self.max_turn_duration_sec {
+                log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration_sec, game.last_turn_timestamp - previous_turn_timestamp);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
                 return self.get_game_result(game.board.winner, game_id);
             };
 
-            if game.current_duration <= self.max_game_duration {
+            if game.current_duration_sec <= self.max_game_duration_sec {
                 self.internal_update_game(game_id, &game);
                 return self.get_game_result(game.board.winner, game_id);
             } else {
-                log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.current_duration);
+                log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration_sec, game.current_duration_sec);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
                 return self.get_game_result(game.board.winner, game_id);
@@ -647,7 +646,6 @@ mod tests {
         let (coords, piece ,_, _) = ctr.get_last_move(game_id);
         return (coords, piece);
     }
-
     /// This function is used to print out the board in a human readable way
     fn print_tiles(tiles: &Tiles) {
         // The result of this function will be something like the following:
@@ -721,8 +719,8 @@ mod tests {
         let user2 = "user2".parse().unwrap();
         let opponent2 = "opponent2".parse().unwrap();
 
-        make_available_near(&mut ctx, &mut ctr, &user2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &user2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
+        make_available_near(&mut ctx, &mut ctr, &opponent2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
 
         let game_id_cheddar = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         let game_id_near = start_game(&mut ctx, &mut ctr, &user2, &opponent2);
@@ -775,7 +773,7 @@ mod tests {
 
         testing_env!(ctx
             .predecessor_account_id(player_2_c)
-            .block_timestamp(ctr.max_game_duration + 1)
+            .block_timestamp(sec_to_nano(ctr.max_game_duration_sec) + 1)
             .attached_deposit(ONE_YOCTO)
             .build()
         );
@@ -788,16 +786,16 @@ mod tests {
     fn test_near_deposit() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT_SEC);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT_SEC);
     }
 
     #[test]
     fn make_available_unavailable_near() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT_SEC);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT_SEC);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
                 token_id: near(), 
@@ -866,7 +864,7 @@ mod tests {
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
 
         make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
         start_game(&mut ctx, &mut ctr, &user(), &opponent());
     }
     #[test]
@@ -1357,32 +1355,32 @@ mod tests {
 
         println!("PenaltyUsers: {:#?}", ctr.get_penalty_users());
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
+        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
 
         assert_eq!(ctr.get_available_players().len(), 3);
-
         testing_env!(ctx
-            .block_timestamp(ctr.max_game_duration + MAX_TIME_TO_BE_AVAILABLE)
+            .block_timestamp(sec_to_nano(ctr.max_game_duration_sec + MAX_TIME_TO_BE_AVAILABLE_SEC))
             .build()
         );
         assert_eq!(ctr.get_available_players().len(), 3);
 
         // test ping expired players
         testing_env!(ctx
-            .block_timestamp(ctr.max_game_duration + MAX_TIME_TO_BE_AVAILABLE + 2)
+            .block_timestamp(sec_to_nano(ctr.max_game_duration_sec + MAX_TIME_TO_BE_AVAILABLE_SEC + 2))
             .build()
         );
-        make_available_near(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        print!("here\\");
+        make_available_near(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
 
         assert_eq!(ctr.get_available_players().len(), 1);
         assert_eq!(ctr.get_available_players()[0].0, "fourth".parse().unwrap());
 
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
+        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
+        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT_SEC);
 
         // first game starts at (max_game_duration + MAX_TIME_TO_BE_AVAILABLE +2) timestamp
         let first_game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
@@ -1398,12 +1396,12 @@ mod tests {
         
         // second game starts 12 minutes after first
         testing_env!(ctx
-            .block_timestamp(ctr.max_game_duration + MAX_TIME_TO_BE_AVAILABLE + 2 + ctr.max_turn_duration * 25 + 1)
+            .block_timestamp(sec_to_nano(ctr.max_game_duration_sec + MAX_TIME_TO_BE_AVAILABLE_SEC + 2 + ctr.max_turn_duration_sec * 25 + 1))
             .build()
         );
 
-        println!("game duration max - {}", ctr.max_game_duration);
-        println!("turn duration max - {}", ctr.max_turn_duration);
+        println!("game duration max - {}", ctr.max_game_duration_sec);
+        println!("turn duration max - {}", ctr.max_turn_duration_sec);
 
         let second_game_id = start_game(&mut ctx, &mut ctr, &"third".parse().unwrap(), &"fourth".parse().unwrap());
         
@@ -1412,16 +1410,16 @@ mod tests {
         let mut second_game = ctr.internal_get_game(&second_game_id); 
         let current_player_second_game = second_game.current_player_account_id();
         let next_player_second_game = second_game.next_player_account_id();
-
+        print!("game init at:{}, max_turn_duration: {}", second_game.initiated_at, ctr.max_turn_duration_sec);
         testing_env!(ctx
-            .block_timestamp(second_game.initiated_at + ctr.max_turn_duration - 1)
+            .block_timestamp(sec_to_nano(second_game.initiated_at + ctr.max_turn_duration_sec - 1))
             .build()
         );
         make_move(&mut ctx, &mut ctr, &current_player_second_game, &second_game_id, 0, 0);
         second_game = ctr.internal_get_game(&second_game_id); 
 
         testing_env!(ctx
-            .block_timestamp(second_game.initiated_at + (ctr.max_turn_duration - 1) + (ctr.max_turn_duration - 1))
+            .block_timestamp(sec_to_nano(second_game.initiated_at + (ctr.max_turn_duration_sec - 1) + (ctr.max_turn_duration_sec - 1)))
             .build()
         );
         make_move(&mut ctx, &mut ctr, &next_player_second_game, &second_game_id, 0, 1);
@@ -1493,7 +1491,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
         testing_env!(ctx
             .predecessor_account_id(player_1.clone())
-            .block_timestamp((TIMEOUT_WIN + 1).into())
+            .block_timestamp(sec_to_nano(TIMEOUT_WIN_SEC + 1).into())
             .build()
         );
         // player2 turn too slow
@@ -1539,7 +1537,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
         testing_env!(ctx
             .predecessor_account_id(player_1.clone())
-            .block_timestamp((TIMEOUT_WIN - 1).into())
+            .block_timestamp((TIMEOUT_WIN_SEC - 1).into())
             .build()
         );
         // player2 turn still have time left to make a move -> dont change anything just log that the claim is not valid yet 
