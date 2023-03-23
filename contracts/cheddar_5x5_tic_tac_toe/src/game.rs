@@ -30,9 +30,9 @@ pub struct Game {
     pub reward: GameDeposit,
     pub board: Board,
     pub total_turns: u8,
-    pub initiated_at: u64,
-    pub last_turn_timestamp: u64,
-    pub current_duration: Duration,
+    pub initiated_at: Timestamp,
+    pub last_turn_timestamp: Timestamp,
+    pub current_duration_sec: Duration,
 }
 
 impl Game {
@@ -61,9 +61,9 @@ impl Game {
             reward,
             board,
             total_turns: 0,
-            initiated_at: env::block_timestamp(),
+            initiated_at: nano_to_sec(env::block_timestamp()),
             last_turn_timestamp: 0,
-            current_duration: 0,
+            current_duration_sec: 0,
         };
         game.set_players(player_1, player_2);
         game
@@ -160,8 +160,8 @@ impl Game {
             "Can't claim timeout win if it's your turn"
         );
         //3. Check for timeout
-        let cur_timestamp = env::block_timestamp();
-        if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN {
+        let cur_timestamp = nano_to_sec(env::block_timestamp());
+        if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN_SEC {
             return false;
         }
         true
