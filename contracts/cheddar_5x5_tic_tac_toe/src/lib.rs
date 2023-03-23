@@ -462,62 +462,6 @@ impl Contract {
         return Some(game_to_store.game_result)
     }
 
-    // TODO: remove this
-    pub fn stop_game(&mut self, game_id: &GameId) {
-        let mut game: Game = self.internal_get_game(&game_id);
-        assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
-
-        let account_id = env::predecessor_account_id();
-        assert_ne!(env::predecessor_account_id(), game.current_player_account_id(), "No access");
-
-        let (player1, player2) = self.internal_get_game_players(game_id);
-
-        game.current_duration_sec = nano_to_sec(env::block_timestamp()) - game.initiated_at;
-        require!(
-            game.current_duration_sec >= self.max_game_duration_sec || nano_to_sec(env::block_timestamp()) - game.last_turn_timestamp > self.max_turn_duration_sec, 
-            "Too early to stop the game"
-        );
-
-        let (winner, looser) = if account_id == player1 {
-            (player1, player2)
-        } else if account_id == player2 {
-            (player2, player1)
-        } else {
-            panic!("You are not in this game. GameId: {} ", game_id)
-        };
-
-        self.internal_update_stats(
-            Some(&game.reward().token_id), 
-            &looser, 
-            UpdateStatsAction::AddPenaltyGame, 
-            None, 
-            None);
-
-        let balance = self.internal_distribute_reward(game_id, Some(&winner));
-        game.change_state(GameState::Finished);
-        self.internal_update_game(game_id, &game);
-
-        let game_to_store = GameLimitedView{
-            game_result: GameResult::Win(winner.clone()),
-            player1: winner,
-            player2: looser,
-            reward_or_tie_refund: GameDeposit {
-                token_id: game.reward().token_id,
-                balance
-            },
-            tiles: game.board.to_tiles(),
-            last_move: None
-        };
-
-        self.internal_store_game(game_id, &game_to_store);
-        assert_eq!(
-            game.game_state,
-            GameState::Finished,
-            "Cannot stop. Game in progress"
-        );
-        self.games.remove(game_id);
-    }
-
     pub fn claim_timeout_win(&mut self, game_id: &GameId) -> Option<GameResult> {
         let game: Game = self.internal_get_game(&game_id);
         let player = env::predecessor_account_id();
@@ -549,6 +493,12 @@ impl Contract {
         };
         self.internal_store_game(game_id, &game_to_store);
         return Some(game_to_store.game_result);
+    }
+    
+    #[private]
+    pub fn update_fee(&mut self,  fee: u16) {
+        assert!(fee <= MAX_FEES, "fees must be in range 0..500 which corresponds to 0..5%");
+        self.service_fee = fee;
     }
 }
 
@@ -697,22 +647,6 @@ mod tests {
         return (coords, piece);
     }
 
-    fn stop_game(
-        ctx: &mut VMContextBuilder,
-        ctr: &mut Contract,
-        user: &AccountId,
-        game_id: &GameId,
-        forward_time_sec: u64
-    ) {
-        let nanos = sec_to_nano(forward_time_sec);
-        testing_env!(ctx
-            .predecessor_account_id(user.clone())
-            .attached_deposit(ONE_YOCTO)
-            .block_timestamp(nanos)
-            .build());
-        ctr.stop_game(&game_id)
-    }
-
     /// This function is used to print out the board in a human readable way
     fn print_tiles(tiles: &Tiles) {
         // The result of this function will be something like the following:
@@ -845,7 +779,7 @@ mod tests {
             .build()
         );
 
-        ctr.stop_game(&game_id_cheddar);
+        ctr.claim_timeout_win(&game_id_cheddar);
         Ok((ctx, ctr))
     }
 
@@ -1175,7 +1109,6 @@ mod tests {
         ); 
     }
     #[test]
-    #[should_panic(expected="Too early to stop the game")]
     fn test_stop_game_too_early() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION_SEC));
         assert!(ctr.get_available_players().is_empty());
@@ -1215,8 +1148,8 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
-        
-        stop_game(&mut ctx, &mut ctr, &player_2, &game_id, 1);
+        let result = ctr.claim_timeout_win(&game_id);
+        assert_eq!(result, None)
     }
 
     #[test]
@@ -1260,7 +1193,14 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 1, 0);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 1, 2);
-        stop_game(&mut ctx, &mut ctr, &player_1, &game_id, 601);
+
+        let player_not_in_the_game: AccountId = "not_in_game.near".parse().unwrap();
+        testing_env!(ctx
+            .predecessor_account_id(player_not_in_the_game)
+            .block_timestamp(sec_to_nano(TIMEOUT_WIN_SEC + 1))
+            .build()
+        );
+        ctr.claim_timeout_win(&game_id);
     }
 
     // #[test]
