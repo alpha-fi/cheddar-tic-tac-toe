@@ -466,8 +466,9 @@ impl Contract {
         let last_move;
 
         if game.board.last_move.is_some() {
-            let last_move_piece = game.board.tiles.get(&game.board.last_move.clone().unwrap());
-            last_move = Some((game.board.last_move.clone().unwrap(), last_move_piece.unwrap()))
+            let board_last_move = game.board.last_move.clone().unwrap();
+            let last_move_piece = game.board.tiles.get(&board_last_move);
+            last_move = Some((board_last_move, last_move_piece.unwrap()))
         } else {
             last_move = None;
         }
