@@ -163,21 +163,14 @@ impl Game {
         assert!(self.contains_player_account_id(&player), "No access");
         //4. Check for timeout
         let cur_timestamp = nano_to_sec(env::block_timestamp());
-        if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN_SEC {
-            return false;
-        }
-        true
+        return cur_timestamp - self.last_turn_timestamp > utils::TIMEOUT_WIN_SEC;
     }
 
     pub fn get_winner(&self) -> Option<GameResult> {
-        if self.board.winner.is_some() {
-            return match self.board.winner.clone().unwrap() {
-                Winner::O => Some(GameResult::Win(self.players.0.clone())),
-                Winner::X => Some(GameResult::Win(self.players.1.clone())),
-                Winner::Tie => Some(GameResult::Tie),
-            }
-        } else {
-            return None;
-        }
+        self.board.winner.map(|w| match w {
+                Winner::O => GameResult::Win(self.players.0.clone()),
+                Winner::X => GameResult::Win(self.players.1.clone()),
+                Winner::Tie => GameResult::Tie)
+        })
     }
 }
