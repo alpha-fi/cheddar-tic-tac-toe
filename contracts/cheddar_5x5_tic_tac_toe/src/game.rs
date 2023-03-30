@@ -163,10 +163,7 @@ impl Game {
         assert!(self.contains_player_account_id(&player), "No access");
         ///4. Check for timeout
         let cur_timestamp = nano_to_sec(env::block_timestamp());
-        if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN_SEC {
-            return false;
-        }
-        true
+        return cur_timestamp - self.last_turn_timestamp > utils::TIMEOUT_WIN_SEC;
     }
 
     pub fn get_winner(&self) -> Option<GameResult> {
