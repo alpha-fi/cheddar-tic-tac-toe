@@ -167,10 +167,10 @@ impl Game {
     }
 
     pub fn get_winner(&self) -> Option<GameResult> {
-        self.board.winner.map(|w| match w {
+        self.board.winner.as_ref().map(|w| match w {
                 Winner::O => GameResult::Win(self.players.0.clone()),
                 Winner::X => GameResult::Win(self.players.1.clone()),
-                Winner::Tie => GameResult::Tie)
+                Winner::Tie => GameResult::Tie
         })
     }
 }

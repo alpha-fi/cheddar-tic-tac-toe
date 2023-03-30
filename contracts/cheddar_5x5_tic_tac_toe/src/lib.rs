@@ -260,17 +260,6 @@ impl Contract {
         return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
     }
     }
-    fn get_game_result(&self, winner_piece: Option<Winner>, game_id: &GameId) -> Option<GameResult> {
-        if winner_piece.is_none() {
-            return None;
-        }
-        let game = self.get_game(game_id);
-        return match winner_piece.unwrap() {
-            Winner::O => Some(GameResult::Win(game.player1)),
-            Winner::X => Some(GameResult::Win(game.player2)),
-            Winner::Tie => Some(GameResult::Tie)
-        }
-    }
 
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<GameResult> {
         let cur_timestamp: Duration = nano_to_sec(env::block_timestamp()) as Duration;
@@ -340,7 +329,7 @@ impl Contract {
                         GameState::Finished,
                         "Cannot stop. Game in progress"
                     );
-                    let game_result = self.get_game_result(game.board.winner, game_id);
+                    let game_result = game.get_winner();
 
                     self.games.remove(game_id);
                     
@@ -371,10 +360,10 @@ impl Contract {
                     log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration_sec, cur_timestamp - game.initiated_at);
                     // looser - current player
                     self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                    return self.get_game_result(game.board.winner, game_id);
+                    return game.get_winner();
                 } else {
                     self.internal_update_game(game_id, &game);
-                    return self.get_game_result(game.board.winner, game_id);
+                    return game.get_winner();
                 }
             }
 
@@ -383,17 +372,17 @@ impl Contract {
                 log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration_sec, game.last_turn_timestamp - previous_turn_timestamp);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return self.get_game_result(game.board.winner, game_id);
+                return game.get_winner();
             };
 
             if game.current_duration_sec <= self.max_game_duration_sec {
                 self.internal_update_game(game_id, &game);
-                return self.get_game_result(game.board.winner, game_id);
+                return game.get_winner();
             } else {
                 log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration_sec, game.current_duration_sec);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
-                return self.get_game_result(game.board.winner, game_id);
+                return game.get_winner();
             }
         } else {
             panic!("Something wrong with game id: {} state", game_id)
