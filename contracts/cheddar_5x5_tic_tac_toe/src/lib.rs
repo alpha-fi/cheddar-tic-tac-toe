@@ -137,6 +137,8 @@ impl Contract {
         } else {
             (None, None)
         };
+
+        assert!(available_for >= MIN_AVAILABLE_FOR && available_for <= MAX_AVAILABLE_FOR, "available_for is out of range. Passed: {}, MIN_AVAILABLE_FOR: {}, MAX_AVAILABLE_FOR: {}", available_for, MIN_AVAILABLE_FOR, MAX_AVAILABLE_FOR);
         self.available_players.insert(account_id,
             &GameConfig {
                 token_id: AccountId::new_unchecked("near".into()),
