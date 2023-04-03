@@ -2,7 +2,7 @@ use std::convert::TryInto;
 
 use crate::*;
 
-pub(crate) const MAX_TIME_TO_BE_AVAILABLE_SEC: u64 = 24 * 60 * 60; // 1 day in seconds
+pub(crate) const MAX_TIME_TO_BE_AVAILABLE: u64 = 24 * 60 * 60; // 1 day in seconds
 
 #[allow(unused)]
 pub(crate) const NO_DEPOSIT: u128 = 0;
@@ -11,7 +11,7 @@ pub(crate) const GAS_FOR_FT_TRANSFER: Gas = Gas(Gas::ONE_TERA.0 * 10);
 
 pub(crate) const MAX_FEES: u16 = 500; // 5%
 pub(crate) const BASIS_P: u16 = 10000; // 100%
-pub(crate) const TIMEOUT_WIN_SEC: Duration = 5 * 60; // 5 minutes timeout in seconds
+pub(crate) const TIMEOUT_WIN: Duration = 5 * 60; // 5 minutes timeout in seconds
 pub(crate) const MIN_DEPOSIT_CHEDDAR: Balance =  50;
 pub(crate) const MIN_AVAILABLE_FOR: Duration = 1 * 60; // 1 minute 
 pub(crate) const MAX_AVAILABLE_FOR: Duration = 60 * 60; // 1 hour 
@@ -24,7 +24,7 @@ pub(crate) type AffiliateId = AccountId;
 pub(crate) const BOARD_SIZE: u8 = 25;
 pub(crate) const MAX_NUM_TURNS: u64 = BOARD_SIZE as u64 * BOARD_SIZE as u64;
 
-pub(crate) const AVAILABLE_FOR_DEFAULT_SEC: u64 = 2 * 60; // 2 minutes in seconds
+pub(crate) const AVAILABLE_FOR_DEFAULT: Duration = 2 * 60; // 2 minutes in seconds
 
 
 /// Returns true if the promise was failed. Otherwise returns false.

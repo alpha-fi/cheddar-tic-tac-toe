@@ -14,8 +14,8 @@ impl Contract {
     #[private]
     pub fn set_max_duration(&mut self, max_duration: u64) -> bool {
         validate_game_duration(max_duration);
-        self.max_game_duration_sec = max_duration.into();
-        self.max_turn_duration_sec = self.max_game_duration_sec / MAX_NUM_TURNS;
+        self.max_game_duration = max_duration.into();
+        self.max_turn_duration = self.max_game_duration / MAX_NUM_TURNS;
         true
     }
 }
@@ -31,7 +31,7 @@ impl Contract {
         let expired_games_ids: Vec<GameId> = self
             .games
             .iter()
-            .filter(|(_, game)| ts - game.initiated_at > self.max_game_duration_sec)
+            .filter(|(_, game)| ts - game.initiated_at > self.max_game_duration)
             .map(|(game_id, _)| game_id)
             .collect();
         if !expired_games_ids.is_empty() {
@@ -41,7 +41,7 @@ impl Contract {
                 log!(
                     "GameId: {}. Game duration expired. Required:{} Current:{} ",
                     game_id,
-                    self.max_game_duration_sec,
+                    self.max_game_duration,
                     ts - game.initiated_at
                 );
             }
@@ -50,11 +50,11 @@ impl Contract {
     }
 
     pub(crate) fn internal_ping_expired_players(&mut self, ts: u64) {
-        let current_timestamp_sec = nano_to_sec(ts);
+        let current_timestamp:Timestamp = nano_to_sec(ts);
         let expired_players: Vec<(AccountId, GameConfig)> = self
             .available_players
             .iter()
-            .filter(|(_, config)| current_timestamp_sec - config.created_at > MAX_TIME_TO_BE_AVAILABLE_SEC)
+            .filter(|(_, config)| current_timestamp - config.created_at > MAX_TIME_TO_BE_AVAILABLE)
             .map(|(account_id, config)| (account_id.clone(), config))
             .collect();
         if !expired_players.is_empty() {

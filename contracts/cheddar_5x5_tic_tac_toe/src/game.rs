@@ -32,7 +32,7 @@ pub struct Game {
     pub total_turns: u8,
     pub initiated_at: Timestamp,
     pub last_turn_timestamp: Timestamp,
-    pub current_duration_sec: Duration,
+    pub current_duration: Duration,
 }
 
 impl Game {
@@ -63,7 +63,7 @@ impl Game {
             total_turns: 0,
             initiated_at: nano_to_sec(env::block_timestamp()),
             last_turn_timestamp: 0,
-            current_duration_sec: 0,
+            current_duration: 0,
         };
         game.set_players(player_1, player_2);
         game
@@ -163,7 +163,7 @@ impl Game {
         assert!(self.contains_player_account_id(&player), "No access");
         //4. Check for timeout
         let cur_timestamp = nano_to_sec(env::block_timestamp());
-        return cur_timestamp - self.last_turn_timestamp > utils::TIMEOUT_WIN_SEC;
+        return cur_timestamp - self.last_turn_timestamp > utils::TIMEOUT_WIN;
     }
 
     pub fn get_winner(&self) -> Option<GameResult> {
