@@ -414,14 +414,7 @@ impl Contract {
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
 
-        let last_move;
-
-        if game.board.last_move.is_some() {
-            let last_move_piece = game.board.tiles.get(&game.board.last_move.clone().unwrap());
-            last_move = Some((game.board.last_move.clone().unwrap(), last_move_piece.unwrap()))
-        } else {
-            last_move = None;
-        }
+        let last_move = game.board.last_move.clone().map(|coords|  (coords.clone(), game.board.tiles.get(&coords).unwrap()));
 
         let game_to_store = GameLimitedView{
             game_result: GameResult::Win(winner),
@@ -432,7 +425,7 @@ impl Contract {
                 balance
             },
             tiles: game.board.to_tiles(),
-            last_move: last_move
+            last_move: last_move,
         };
 
         self.internal_store_game(game_id, &game_to_store);
