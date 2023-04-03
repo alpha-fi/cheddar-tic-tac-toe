@@ -38,9 +38,9 @@ pub struct GameView {
     pub total_bet: GameDeposit,
     pub tiles: Tiles,
     /* * */
-    pub initiated_at_sec: Timestamp,
-    pub last_turn_timestamp_sec: Timestamp,
-    pub current_duration_sec: Duration,
+    pub initiated_at: Timestamp,
+    pub last_turn_timestamp: Timestamp,
+    pub current_duration: Duration,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -90,9 +90,9 @@ impl From<&Game> for GameView {
             current_player,
             total_bet: g.reward(),
             tiles: g.board.to_tiles(),
-            initiated_at_sec: g.initiated_at,
-            last_turn_timestamp_sec: g.last_turn_timestamp,
-            current_duration_sec: g.current_duration,
+            initiated_at: g.initiated_at,
+            last_turn_timestamp: g.last_turn_timestamp,
+            current_duration: g.duration,
         }
     }
 }

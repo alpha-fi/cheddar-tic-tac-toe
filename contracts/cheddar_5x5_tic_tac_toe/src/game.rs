@@ -32,7 +32,7 @@ pub struct Game {
     pub total_turns: u8,
     pub initiated_at: Timestamp,
     pub last_turn_timestamp: Timestamp,
-    pub current_duration: Duration,
+    pub duration: Duration,
 }
 
 impl Game {
@@ -63,7 +63,7 @@ impl Game {
             total_turns: 0,
             initiated_at: nano_to_sec(env::block_timestamp()),
             last_turn_timestamp: 0,
-            current_duration: 0,
+            duration: 0,
         };
         game.set_players(player_1, player_2);
         game

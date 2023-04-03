@@ -355,7 +355,7 @@ impl Contract {
             // this turn timestamp
             game.last_turn_timestamp = cur_timestamp;
             // this game duration 
-            game.current_duration = cur_timestamp - game.initiated_at;
+            game.duration = cur_timestamp - game.initiated_at;
 
             if previous_turn_timestamp == 0 {
                 if cur_timestamp - game.initiated_at > self.max_turn_duration {
@@ -377,11 +377,11 @@ impl Contract {
                 return game.get_winner();
             };
 
-            if game.current_duration <= self.max_game_duration {
+            if game.duration <= self.max_game_duration {
                 self.internal_update_game(game_id, &game);
                 return game.get_winner();
             } else {
-                log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.current_duration);
+                log!("Game duration expired. Required:{} Current:{} ", self.max_game_duration, game.duration);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
                 return game.get_winner();
