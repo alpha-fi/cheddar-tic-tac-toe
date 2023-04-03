@@ -414,28 +414,13 @@ impl Contract {
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
 
-        let last_move = game.board.last_move.clone().map(|coords|  (coords.clone(), game.board.tiles.get(&coords).unwrap()));
-
-        let game_to_store = GameLimitedView{
-            game_result: GameResult::Win(winner),
-            player1,
-            player2,
-            reward_or_tie_refund: GameDeposit {
-                token_id: game.reward().token_id,
-                balance
-            },
-            tiles: game.board.to_tiles(),
-            last_move: last_move,
-        };
-
-        self.internal_store_game(game_id, &game_to_store);
         assert_eq!(
             game.game_state,
             GameState::Finished,
             "Cannot stop. Game in progress"
         );
-        self.games.remove(game_id);
-        return Some(game_to_store.game_result)
+
+        return self.store_game(game_id, &winner, &game.get_opponent(&winner), balance);
     }
 
     pub fn claim_timeout_win(&mut self, game_id: &GameId) -> Option<GameResult> {
@@ -447,20 +432,19 @@ impl Contract {
         }
         let looser = game.get_opponent(&player);
         let balance = self.internal_distribute_reward(game_id, Some(&player));
-        let last_move;
 
-        if game.board.last_move.is_some() {
-            let board_last_move = game.board.last_move.clone().unwrap();
-            let last_move_piece = game.board.tiles.get(&board_last_move);
-            last_move = Some((board_last_move, last_move_piece.unwrap()))
-        } else {
-            last_move = None;
-        }
+        return self.store_game(game_id, &player, &looser, balance)
+    }
+
+    pub fn store_game(&mut self, game_id: &GameId, winner: &AccountId, looser: &AccountId, balance: U128) -> Option<GameResult> {
+        let game: Game = self.internal_get_game(&game_id);
+        let last_move = game.board.last_move.clone().map(|coords|  (coords.clone(), game.board.tiles.get(&coords).unwrap()));
+
         self.games.remove(game_id);
         let game_to_store = GameLimitedView{
-            game_result: GameResult::Win(player.clone()),
-            player1: player,
-            player2: looser,
+            game_result: GameResult::Win(winner.clone()),
+            player1: winner.clone(),
+            player2: looser.clone(),
             reward_or_tie_refund: GameDeposit {
                 token_id: game.reward().token_id,
                 balance
