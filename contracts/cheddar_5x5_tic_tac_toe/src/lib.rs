@@ -14,7 +14,6 @@ use near_sdk::collections::{UnorderedMap, UnorderedSet};
 use stats::UserPenalties;
 use views::{GameLimitedView};
 
-mod board;
 mod callbacks;
 mod config;
 mod game;
@@ -26,7 +25,6 @@ mod token_receiver;
 mod views;
 mod utils;
 
-use crate::board::*;
 use crate::config::*;
 use crate::game::*;
 use crate::game_config::*;
@@ -137,8 +135,6 @@ impl Contract {
         } else {
             (None, None)
         };
-
-        assert!(available_for >= MIN_AVAILABLE_FOR && available_for <= MAX_AVAILABLE_FOR, "available_for is out of range. Passed: {}, MIN_AVAILABLE_FOR: {}, MAX_AVAILABLE_FOR: {}", available_for, MIN_AVAILABLE_FOR, MAX_AVAILABLE_FOR);
         self.available_players.insert(account_id,
             &GameConfig {
                 token_id: AccountId::new_unchecked("near".into()),
@@ -259,8 +255,8 @@ impl Contract {
         } else {
         let game = self.internal_get_game(game_id);
         let game_result = game.get_winner();
-        return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
-    }
+        return (game.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
+        }
     }
 
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<GameResult> {
@@ -272,28 +268,28 @@ impl Contract {
 
         assert_eq!(env::predecessor_account_id(), game.current_player_account_id(), "not your turn");
         assert_eq!(game.game_state, GameState::Active, "Current game isn't active");
-        match game.board.check_move(&coords) {
+        match game.check_move(&coords) {
             Ok(_) => {
                 // fill board tile with current player piece
-                game.board.tiles.insert(&coords, &game.current_piece);
+                game.board.insert(&coords, &game.current_piece);
                 // set the last move 
-                game.board.last_move = Some(coords.clone());
+                game.last_move = Some(coords.clone());
                 // switch piece to other one
                 game.current_piece = game.current_piece.other();
-                game.board.current_piece = game.current_piece;
+                game.current_piece = game.current_piece;
                 // switch player
                 game.current_player_index = 1 - game.current_player_index;
-                game.board.update_winner(&coords);
-                if let Some(winner) = game.board.winner.clone() {
+                game.update_winner(&coords);
+                if let Some(winner) = game.winner.clone() {
                     // change game state to Finished
                     game.change_state(GameState::Finished);
                     self.internal_update_game(game_id, &game);
                     // get winner account, if there is Tie - refund to both players
                     // with crop service fee amount from it
                     let winner_account:Option<&AccountId> = match winner {
-                        board::Winner::X => game.get_player_acc_by_piece(Piece::X),
-                        board::Winner::O => game.get_player_acc_by_piece(Piece::O),
-                        board::Winner::Tie => None,
+                        game::Winner::X => game.get_player_acc_by_piece(Piece::X),
+                        game::Winner::O => game.get_player_acc_by_piece(Piece::O),
+                        game::Winner::Tie => None,
                     };
                
                     let balance = if winner_account.is_some() {
@@ -321,7 +317,7 @@ impl Contract {
                             token_id: game.reward().token_id,
                             balance
                         },
-                        tiles: game.board.to_tiles(),
+                        tiles: game.to_tiles(),
                         last_move: Some((coords, game.current_piece.other())),
                     };
 
@@ -413,7 +409,6 @@ impl Contract {
         let balance = self.internal_distribute_reward(game_id, Some(&winner));
         game.change_state(GameState::Finished);
         self.internal_update_game(game_id, &game);
-
         assert_eq!(
             game.game_state,
             GameState::Finished,
@@ -438,8 +433,8 @@ impl Contract {
 
     pub fn store_game(&mut self, game_id: &GameId, winner: &AccountId, looser: &AccountId, balance: U128) -> Option<GameResult> {
         let game: Game = self.internal_get_game(&game_id);
-        let last_move = game.board.last_move.clone().map(|coords|  {
-          let piece = game.board.tiles.get(&coords).unwrap();
+        let last_move = game.last_move.clone().map(|coords|  {
+          let piece = game.board.get(&coords).unwrap();
           return (coords, piece);
         });
 
@@ -452,7 +447,7 @@ impl Contract {
                 token_id: game.reward().token_id,
                 balance
             },
-            tiles: game.board.to_tiles(),
+            tiles: game.to_tiles(),
             last_move: last_move
         };
         self.internal_store_game(game_id, &game_to_store);
@@ -910,7 +905,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -973,7 +968,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -991,7 +986,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 2, 2);
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 3, 0);
         make_move(&mut ctx, &mut ctr, &player_2, &game_id, 3, 1);
-        print_tiles(&ctr.internal_get_game(&game_id).board.to_tiles());
+        print_tiles(&ctr.internal_get_game(&game_id).to_tiles());
         let winner = make_move(&mut ctx, &mut ctr, &player_1, &game_id, 4, 0);
         assert_eq!(winner,Some(GameResult::Win(player_1)));
     }
@@ -1029,7 +1024,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1100,7 +1095,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1145,7 +1140,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1447,7 +1442,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1493,7 +1488,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
 
@@ -1511,8 +1506,8 @@ mod tests {
     }
     #[test] 
     fn test_player_piece_binding() {
-        let board = Board::new(1);
-        assert_eq!(board.current_piece, Piece::O);
+        let game = Game::create_game(1, user(), opponent(), GameDeposit { token_id: acc_cheddar(), balance: U128(5000) });
+        assert_eq!(game.current_piece, Piece::O);
     }
     #[test]
     fn test_get_last_move() {
@@ -1542,7 +1537,7 @@ mod tests {
         assert_ne!(player_1, game.next_player_account_id());
         assert_eq!(player_1, game.players.0);
         assert_eq!(player_2, game.players.1);
-        assert_eq!(game.board.current_piece, Piece::O);
+        assert_eq!(game.current_piece, Piece::O);
 
         assert!(ctr.get_active_games().contains(&(game_id, GameView::from(&game))));
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 0);

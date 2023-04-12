@@ -89,7 +89,7 @@ impl From<&Game> for GameView {
             game_status: g.game_state.clone(),
             current_player,
             total_bet: g.reward(),
-            tiles: g.board.to_tiles(),
+            tiles: g.to_tiles(),
             initiated_at: g.initiated_at,
             last_turn_timestamp: g.last_turn_timestamp,
             current_duration: g.duration,
@@ -141,7 +141,7 @@ impl Contract {
 
     pub fn get_current_tiles(&self, game_id: &GameId) -> Tiles {
         let game = self.internal_get_game(game_id);
-        game.board.to_tiles()
+        game.to_tiles()
     }
 
     pub fn get_token_min_deposit(&self) -> U128 {
