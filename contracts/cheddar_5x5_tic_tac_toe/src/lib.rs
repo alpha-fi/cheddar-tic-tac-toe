@@ -438,7 +438,10 @@ impl Contract {
 
     pub fn store_game(&mut self, game_id: &GameId, winner: &AccountId, looser: &AccountId, balance: U128) -> Option<GameResult> {
         let game: Game = self.internal_get_game(&game_id);
-        let last_move = game.board.last_move.clone().map(|coords|  (coords.clone(), game.board.tiles.get(&coords).unwrap()));
+        let last_move = game.board.last_move.clone().map(|coords|  {
+          let piece = game.board.tiles.get(&coords).unwrap();
+          return (coords, piece);
+        });
 
         self.games.remove(game_id);
         let game_to_store = GameLimitedView{
