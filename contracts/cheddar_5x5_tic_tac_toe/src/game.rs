@@ -67,6 +67,7 @@ pub struct Game {
     pub last_move: Option<Coords>,
     pub winner: Option<Winner>,
     pub board: UnorderedMap<Coords, Piece>,
+    pub duration: Duration,
 }
 
 impl Game {
@@ -100,6 +101,7 @@ impl Game {
             last_move: None,
             winner: None,
             board: UnorderedMap::new(StorageKey::GameBoard { game_id }),
+            duration: 0,
         };
         game.set_players(player_1, player_2);
         game
@@ -182,7 +184,7 @@ impl Game {
         }
     }
 
-    pub fn claim_timeout_win(&self, player: AccountId) -> bool {
+    pub fn claim_timeout_win(&self, player: &AccountId) -> bool {
         //1. Check if the game is still going
         assert_eq!(
             self.game_state,
@@ -191,7 +193,7 @@ impl Game {
         );
         //2. Check if opponets move
         assert_ne!(
-            player,
+            *player,
             self.current_player_account_id(),
             "Can't claim timeout win if it's your turn"
         );
@@ -203,6 +205,15 @@ impl Game {
             return false;
         }
         true
+        return cur_timestamp - self.last_turn_timestamp > utils::TIMEOUT_WIN;
+    }
+
+    pub fn get_winner(&self) -> Option<GameResult> {
+        self.board.winner.as_ref().map(|w| match w {
+                Winner::O => GameResult::Win(self.players.0.clone()),
+                Winner::X => GameResult::Win(self.players.1.clone()),
+                Winner::Tie => GameResult::Tie
+        })
     }
 
     pub fn get_winner(&self) -> Option<GameResult> {
