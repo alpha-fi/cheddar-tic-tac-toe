@@ -255,7 +255,8 @@ impl Contract {
         } else {
         let game = self.internal_get_game(game_id);
         let game_result = game.get_winner();
-        return (game.board.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
+        return (game.get_last_move(), game.current_piece.other(), game_result, Some(game.last_turn_timestamp));
+        }
     }
 
     pub fn make_move(&mut self, game_id: &GameId, coords: Coords) -> Option<GameResult> {
@@ -353,8 +354,8 @@ impl Contract {
             game.duration = cur_timestamp - game.initiated_at;
 
             if previous_turn_timestamp == 0 {
-                if cur_timestamp - game.initiated_at > self.max_turn_duration_sec {
-                    log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration_sec, cur_timestamp - game.initiated_at);
+                if cur_timestamp - game.initiated_at > self.max_turn_duration {
+                    log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, cur_timestamp - game.initiated_at);
                     // looser - current player
                     self.internal_stop_expired_game(game_id, env::predecessor_account_id());
                     return game.get_winner();
@@ -365,8 +366,8 @@ impl Contract {
             }
 
             // expired turn time scenario - too long movement from current player
-            if game.last_turn_timestamp - previous_turn_timestamp > self.max_turn_duration_sec {
-                log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration_sec, game.last_turn_timestamp - previous_turn_timestamp);
+            if game.last_turn_timestamp - previous_turn_timestamp > self.max_turn_duration {
+                log!("Turn duration expired. Required:{} Current:{} ", self.max_turn_duration, game.last_turn_timestamp - previous_turn_timestamp);
                 // looser - current player
                 self.internal_stop_expired_game(game_id, env::predecessor_account_id());
                 return game.get_winner();
@@ -432,8 +433,8 @@ impl Contract {
 
     pub fn store_game(&mut self, game_id: &GameId, winner: &AccountId, looser: &AccountId, balance: U128) -> Option<GameResult> {
         let game: Game = self.internal_get_game(&game_id);
-        let last_move = game.board.last_move.clone().map(|coords|  {
-          let piece = game.board.tiles.get(&coords).unwrap();
+        let last_move = game.last_move.clone().map(|coords|  {
+          let piece = game.board.get(&coords).unwrap();
           return (coords, piece);
         });
 
@@ -1359,8 +1360,8 @@ mod tests {
             .build()
         );
 
-        println!("game duration max - {}", ctr.max_game_duration_sec);
-        println!("turn duration max - {}", ctr.max_turn_duration_sec);
+        println!("game duration max - {}", ctr.max_game_duration);
+        println!("turn duration max - {}", ctr.max_turn_duration);
 
         let second_game_id = start_game(&mut ctx, &mut ctr, &"third".parse().unwrap(), &"fourth".parse().unwrap());
         
@@ -1496,7 +1497,7 @@ mod tests {
         make_move(&mut ctx, &mut ctr, &player_1, &game_id, 0, 2);
         testing_env!(ctx
             .predecessor_account_id(player_1.clone())
-            .block_timestamp((TIMEOUT_WIN_SEC - 1).into())
+            .block_timestamp((TIMEOUT_WIN - 1).into())
             .build()
         );
         // player2 turn still have time left to make a move -> dont change anything just log that the claim is not valid yet 

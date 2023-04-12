@@ -31,7 +31,7 @@ impl Contract {
         let expired_games_ids: Vec<GameId> = self
             .games
             .iter()
-            .filter(|(_, game)| ts - game.initiated_at > self.max_game_duration_sec)
+            .filter(|(_, game)| ts - game.initiated_at > self.max_game_duration)
             .map(|(game_id, _)| game_id)
             .collect();
         if !expired_games_ids.is_empty() {
@@ -41,7 +41,7 @@ impl Contract {
                 log!(
                     "GameId: {}. Game duration expired. Required:{} Current:{} ",
                     game_id,
-                    self.max_game_duration_sec,
+                    self.max_game_duration,
                     ts - game.initiated_at
                 );
             }
