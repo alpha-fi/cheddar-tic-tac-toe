@@ -12,9 +12,9 @@ impl Contract {
 
     /// set accuracy, max_duration need to be in range [100..3600] seconds
     #[private]
-    pub fn set_max_duration(&mut self, max_duration: u32) -> bool {
-        validate_game_duration(max_duration as u64);
-        self.max_game_duration = sec_to_nano(max_duration);
+    pub fn set_max_duration(&mut self, max_duration: u64) -> bool {
+        validate_game_duration(max_duration);
+        self.max_game_duration = max_duration.into();
         self.max_turn_duration = self.max_game_duration / MAX_NUM_TURNS;
         true
     }
@@ -46,14 +46,15 @@ impl Contract {
                 );
             }
         }
-        self.last_update_timestamp = ts;
+        self.last_update_timestamp = nano_to_sec(ts);
     }
 
     pub(crate) fn internal_ping_expired_players(&mut self, ts: u64) {
+        let current_timestamp:Timestamp = nano_to_sec(ts);
         let expired_players: Vec<(AccountId, GameConfig)> = self
             .available_players
             .iter()
-            .filter(|(_, config)| ts - config.created_at > MAX_TIME_TO_BE_AVAILABLE)
+            .filter(|(_, config)| current_timestamp - config.created_at > MAX_TIME_TO_BE_AVAILABLE)
             .map(|(account_id, config)| (account_id.clone(), config))
             .collect();
         if !expired_players.is_empty() {
@@ -74,7 +75,7 @@ impl Contract {
                 );
             }
         }
-        self.last_update_timestamp = ts;
+        self.last_update_timestamp = nano_to_sec(ts);
     }
 
     pub(crate) fn internal_transfer(
@@ -236,6 +237,7 @@ impl Contract {
                 balance,
             },
             tiles: game.board.to_tiles(),
+            last_move: None,
         };
         self.internal_store_game(game_id, &game_to_store);
         assert_eq!(

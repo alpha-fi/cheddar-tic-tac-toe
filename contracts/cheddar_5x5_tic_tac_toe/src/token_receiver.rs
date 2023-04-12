@@ -87,7 +87,7 @@ impl Contract {
                 deposit: amount,
                 opponent_id: game_config.opponent_id,
                 referrer_id,
-                created_at: env::block_timestamp(),
+                created_at: nano_to_sec(env::block_timestamp()).into(),
             },
         );
 

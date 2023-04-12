@@ -8,7 +8,7 @@ pub struct GameConfig {
     pub(crate) deposit: Balance,
     pub(crate) opponent_id: Option<AccountId>,
     pub(crate) referrer_id: Option<AccountId>,
-    pub(crate) created_at: u64,
+    pub(crate) created_at: Timestamp, // timestamp in seconds
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -19,7 +19,7 @@ pub struct GameConfigView {
     pub(crate) deposit: U128,
     pub(crate) opponent_id: Option<AccountId>,
     pub(crate) referrer_id: Option<AccountId>,
-    pub(crate) created_at: u32,
+    pub(crate) created_at: Timestamp,
 }
 
 impl From<&GameConfig> for GameConfigView {
@@ -29,7 +29,7 @@ impl From<&GameConfig> for GameConfigView {
             deposit: gc.deposit.into(), 
             opponent_id: gc.opponent_id.clone(), 
             referrer_id: gc.referrer_id.clone(),
-            created_at: nano_to_sec(gc.created_at)
+            created_at: nano_to_sec(gc.created_at).into()
         }
     }
 }
@@ -54,7 +54,7 @@ impl GameConfig {
             deposit, 
             opponent_id: None, 
             referrer_id: None,
-            created_at: env::block_timestamp()
+            created_at: nano_to_sec(env::block_timestamp()).into(),
         }
     }
     /// `GameConfig` from transfer message
@@ -68,7 +68,7 @@ impl GameConfig {
             deposit, 
             opponent_id: game_args.opponent_id.clone(), 
             referrer_id: game_args.referrer_id.clone(),
-            created_at: env::block_timestamp()
+            created_at: nano_to_sec(env::block_timestamp()).into(),
         }
     }
 }

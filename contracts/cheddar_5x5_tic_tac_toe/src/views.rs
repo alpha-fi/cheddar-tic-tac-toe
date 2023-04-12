@@ -1,7 +1,7 @@
 use crate::*;
 use std::collections::HashMap;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub enum GameResult {
     Win(AccountId),
@@ -23,8 +23,8 @@ pub struct ContractParams {
     pub games: HashMap<GameId, GameView>,
     pub available_players: Vec<(AccountId, GameConfigView)>,
     pub service_fee: u16,
-    pub max_game_duration: u32,
-    pub last_update_timestamp_sec: u32,
+    pub max_game_duration: Duration,
+    pub last_update_timestamp: Timestamp,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,12 +35,12 @@ pub struct GameView {
     pub player2: AccountId,
     pub game_status: GameState,
     pub current_player: AccountId,
-    pub reward: GameDeposit,
+    pub total_bet: GameDeposit,
     pub tiles: Tiles,
     /* * */
-    pub initiated_at_sec: u32,
-    pub last_turn_timestamp_sec: u32,
-    pub current_duration_sec: u32,
+    pub initiated_at: Timestamp,
+    pub last_turn_timestamp: Timestamp,
+    pub current_duration: Duration,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -51,6 +51,7 @@ pub struct GameLimitedView {
     pub player2: AccountId,
     pub reward_or_tie_refund: GameDeposit,
     pub tiles: Tiles,
+    pub last_move: Option<(Coords, Piece)>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -87,18 +88,18 @@ impl From<&Game> for GameView {
             player2,
             game_status: g.game_state.clone(),
             current_player,
-            reward: g.reward(),
+            total_bet: g.reward(),
             tiles: g.board.to_tiles(),
-            initiated_at_sec: nano_to_sec(g.initiated_at),
-            last_turn_timestamp_sec: nano_to_sec(g.last_turn_timestamp),
-            current_duration_sec: nano_to_sec(g.current_duration),
+            initiated_at: g.initiated_at,
+            last_turn_timestamp: g.last_turn_timestamp,
+            current_duration: g.duration,
         }
     }
 }
 
 #[near_bindgen]
 impl Contract {
-    pub fn get_contract_params(&self) -> ContractParams {
+    pub fn get_contract_params(&mut self) -> ContractParams {
         let games: HashMap<u64, GameView> = self
             .games
             .iter()
@@ -111,7 +112,7 @@ impl Contract {
             available_players,
             service_fee: self.service_fee,
             max_game_duration: nano_to_sec(self.max_game_duration),
-            last_update_timestamp_sec: nano_to_sec(self.last_update_timestamp),
+            last_update_timestamp: nano_to_sec(self.last_update_timestamp),
         }
     }
 
@@ -178,4 +179,5 @@ impl Contract {
 
         result
     }
+
 }

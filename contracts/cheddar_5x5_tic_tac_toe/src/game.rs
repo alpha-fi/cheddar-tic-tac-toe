@@ -30,9 +30,9 @@ pub struct Game {
     pub reward: GameDeposit,
     pub board: Board,
     pub total_turns: u8,
-    pub initiated_at: u64,
-    pub last_turn_timestamp: u64,
-    pub current_duration: Duration,
+    pub initiated_at: Timestamp,
+    pub last_turn_timestamp: Timestamp,
+    pub duration: Duration,
 }
 
 impl Game {
@@ -61,9 +61,9 @@ impl Game {
             reward,
             board,
             total_turns: 0,
-            initiated_at: env::block_timestamp(),
+            initiated_at: nano_to_sec(env::block_timestamp()),
             last_turn_timestamp: 0,
-            current_duration: 0,
+            duration: 0,
         };
         game.set_players(player_1, player_2);
         game
@@ -146,7 +146,7 @@ impl Game {
         }
     }
 
-    pub fn claim_timeout_win(&self, player: AccountId) -> bool {
+    pub fn claim_timeout_win(&self, player: &AccountId) -> bool {
         //1. Check if the game is still going
         assert_eq!(
             self.game_state,
@@ -155,15 +155,22 @@ impl Game {
         );
         //2. Check if opponets move
         assert_ne!(
-            player,
+            *player,
             self.current_player_account_id(),
             "Can't claim timeout win if it's your turn"
         );
-        //3. Check for timeout
-        let cur_timestamp = env::block_timestamp();
-        if cur_timestamp - self.last_turn_timestamp <= utils::TIMEOUT_WIN {
-            return false;
-        }
-        true
+        //3. Check if the player invoking the method is in the game
+        assert!(self.contains_player_account_id(&player), "No access");
+        //4. Check for timeout
+        let cur_timestamp = nano_to_sec(env::block_timestamp());
+        return cur_timestamp - self.last_turn_timestamp > utils::TIMEOUT_WIN;
+    }
+
+    pub fn get_winner(&self) -> Option<GameResult> {
+        self.board.winner.as_ref().map(|w| match w {
+                Winner::O => GameResult::Win(self.players.0.clone()),
+                Winner::X => GameResult::Win(self.players.1.clone()),
+                Winner::Tie => GameResult::Tie
+        })
     }
 }
