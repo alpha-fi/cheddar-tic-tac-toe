@@ -446,8 +446,8 @@ impl Contract {
         self.games.remove(game_id);
         let game_to_store = GameLimitedView{
             game_result: GameResult::Win(winner.clone()),
-            player1: winner.clone(),
-            player2: looser.clone(),
+            player1: winner,
+            player2: looser,
             reward_or_tie_refund: GameDeposit {
                 token_id: game.reward().token_id,
                 balance
