@@ -1,5 +1,7 @@
 use std::fs::create_dir;
 
+use near_contract_standards::storage_management::StorageBalance;
+use near_sdk::env::account_locked_balance;
 use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, Duration, PanicOnDefault,
     Promise, PromiseOrValue, PromiseResult, assert_one_yocto, Timestamp
@@ -7,7 +9,7 @@ use near_sdk::{
 use near_sdk::{
     env, ext_contract, log, near_bindgen, ONE_YOCTO, require
 };
-use near_sdk::json_types::U128;
+use near_sdk::json_types::{U128, ValidAccountId};
 use near_sdk::borsh::{self, BorshSerialize, BorshDeserialize};
 use near_sdk::serde::{Serialize, Deserialize};
 use near_sdk::collections::{UnorderedMap, UnorderedSet};
@@ -46,14 +48,21 @@ pub enum StorageKey {
     TotalRewards {account_id : AccountId},
     TotalAffiliateRewards {account_id : AccountId},
     PlayerAvailability,
+    RegisteredPlayers,
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct PlayerAvailability {
     /// unix timestamp in seconds
     available_from: Timestamp, 
     /// unix timestamp in seconds
     available_to: Timestamp,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct Vault { 
+    total_rewards: Balance,
+    storage_deposit: Balance,
 }
 
 #[near_bindgen]
@@ -81,6 +90,8 @@ pub struct Contract {
     pub max_stored_games: u8,
     pub stored_games: UnorderedMap<GameId, GameLimitedView>,
     pub player_availability: UnorderedMap<AccountId, PlayerAvailability>,
+    /// registered players and their total_rewards and deposit NEAR to cover storage
+    pub registered_players: UnorderedMap<AccountId, Vault>,
 }
 #[near_bindgen]
 impl Contract {
@@ -109,7 +120,8 @@ impl Contract {
             max_turn_duration: 2*60,
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames),
-            player_availability: UnorderedMap::new(StorageKey::PlayerAvailability)
+            player_availability: UnorderedMap::new(StorageKey::PlayerAvailability),
+            registered_players: UnorderedMap::new(StorageKey::RegisteredPlayers),
         }
     }
 
@@ -153,6 +165,10 @@ impl Contract {
         }
     }
 
+    pub  fn get_registered_player(&self, account_id: &AccountId) -> Vault {
+        return self.registered_players.get(account_id).expect("Player not registered");
+    }
+
     #[payable]
     pub fn make_unavailable(&mut self) {
         assert_one_yocto();
@@ -171,6 +187,75 @@ impl Contract {
             },
             None => () // skip
         }
+    }
+    pub fn is_user_registered(&self, account_id: &AccountId) -> bool {
+        let key = self.registered_players.get(account_id);
+        match key {
+            None => false,
+            Some(_) => true,
+        }
+    }
+    pub fn register_player(&mut self, account_id: &AccountId){
+        let valut = Vault {total_rewards: 0, storage_deposit: STORAGE_COST_PER_USER};
+        self.registered_players.insert(account_id, &valut);
+    }
+
+    #[allow(unused_variables)]
+    #[payable]
+    pub fn storage_deposit(
+        &mut self,
+        account_id: Option<AccountId>,
+        registration_only: Option<bool>,
+    ) -> StorageBalance {
+        let storage_deposit: Balance = env::attached_deposit();
+        let account_id = account_id
+            .map(|a| a.into())
+            .unwrap_or_else(|| env::predecessor_account_id());
+        if self.is_user_registered(&account_id) {
+            log!("The account is already registered, refunding the deposit");
+            if storage_deposit > 0 {
+                Promise::new(env::predecessor_account_id()).transfer(storage_deposit);
+            }
+        } else {
+            assert!(
+                storage_deposit >= STORAGE_COST_PER_USER,
+                "The attached deposit is less than the minimum storage balance ({})",
+                STORAGE_COST_PER_USER
+            );
+            self.register_player(&account_id);
+
+            let refund = storage_deposit - STORAGE_COST_PER_USER;
+            if refund > 0 {
+                Promise::new(env::predecessor_account_id()).transfer(refund);
+            }
+        }
+        self.storage_balance()
+    }
+    pub fn storage_balance(&self) -> StorageBalance {
+        StorageBalance {
+            total: STORAGE_COST_PER_USER.into(),
+            available: U128::from(0),
+        }
+    }
+    /// Method not supported. Unregister the account using 'unregister_account()' method. It unregisters the account and withdraws deposited NEAR.
+    #[allow(unused_variables)]
+    pub fn storage_withdraw(&mut self, amount: Option<U128>) -> StorageBalance {
+        panic!("Storage withdraw not possible, unregister the account instead");
+    }
+    pub fn unregister_account(&mut self) -> StorageBalance {
+        let account_id = env::predecessor_account_id();
+        if !self.is_user_registered(&account_id) {
+            log!("The account is not registered, cannot close an unregistered account");
+            // if  > 0 {
+            //     Promise::new(env::predecessor_account_id()).transfer(storage_deposit);
+            // }
+        } else {
+            let refund = self.registered_players.remove(&account_id).unwrap().storage_deposit;
+            if refund > 0 {
+                Promise::new(env::predecessor_account_id()).transfer(refund);
+            }
+        }
+        self.storage_balance()
     }
 
     pub fn start_game(&mut self, player_2_id: AccountId) -> GameId {

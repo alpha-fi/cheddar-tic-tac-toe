@@ -26,6 +26,9 @@ pub(crate) const MAX_NUM_TURNS: u64 = BOARD_SIZE as u64 * BOARD_SIZE as u64;
 
 pub(crate) const AVAILABLE_FOR_DEFAULT: Duration = 2 * 60; // 2 minutes in seconds
 
+/// pesimistic assumption of the storage_deposit needed for every user 
+pub(crate) const STORAGE_COST_PER_USER: Balance = 200_000_000_000_000_000_000_000; // 0.2 NEAR in YOCTONEAR
+
 
 /// Returns true if the promise was failed. Otherwise returns false.
 /// Fails if called outside a callback that received 1 promise result.

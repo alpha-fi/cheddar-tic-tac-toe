@@ -62,7 +62,7 @@ pub struct Game {
     pub total_turns: u8,
     pub initiated_at: Timestamp,
     pub last_turn_timestamp: Timestamp,
-    pub current_duration_sec: Duration,
+    pub current_duration: Duration,
     //board fields
     pub last_move: Option<Coords>,
     pub winner: Option<Winner>,
@@ -96,7 +96,7 @@ impl Game {
             total_turns: 0,
             initiated_at: nano_to_sec(env::block_timestamp()),
             last_turn_timestamp: 0,
-            current_duration_sec: 0,
+            current_duration: 0,
             //board fields
             last_move: None,
             winner: None,
