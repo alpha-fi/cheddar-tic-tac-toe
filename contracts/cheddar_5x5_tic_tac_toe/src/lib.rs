@@ -1,7 +1,6 @@
 use std::fs::create_dir;
 
 use near_contract_standards::storage_management::StorageBalance;
-use near_sdk::env::account_locked_balance;
 use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, Duration, PanicOnDefault,
     Promise, PromiseOrValue, PromiseResult, assert_one_yocto, Timestamp
@@ -9,7 +8,7 @@ use near_sdk::{
 use near_sdk::{
     env, ext_contract, log, near_bindgen, ONE_YOCTO, require
 };
-use near_sdk::json_types::{U128, ValidAccountId};
+use near_sdk::json_types::{U128};
 use near_sdk::borsh::{self, BorshSerialize, BorshDeserialize};
 use near_sdk::serde::{Serialize, Deserialize};
 use near_sdk::collections::{UnorderedMap, UnorderedSet};
@@ -59,7 +58,8 @@ pub struct PlayerAvailability {
     available_to: Timestamp,
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Vault { 
     total_rewards: Balance,
     storage_deposit: Balance,
@@ -130,6 +130,7 @@ impl Contract {
     pub fn make_available(
         &mut self,
         game_config: Option<GameConfigNear>,
+        bet: Balance,
         available_for: Duration,
     ) {
         let cur_timestamp = env::block_timestamp();
@@ -139,8 +140,8 @@ impl Contract {
         let account_id: &AccountId = &env::predecessor_account_id();
         assert!(self.available_players.get(account_id).is_none(), "Already in the waiting list the list");
 
-        let deposit: Balance = env::attached_deposit();
-        assert!(deposit >= MIN_DEPOSIT_CHEDDAR, "Deposit is too small. Attached: {}, Required: {}", deposit, MIN_DEPOSIT_CHEDDAR);
+        let deposit: Balance = bet;
+        assert!(bet >= MIN_BET_CHEDDAR, "Bet is too small. Required at least: {}", MIN_DEPOSIT_CHEDDAR);
 
         let (opponent_id, referrer_id) = if let Some(game_config) = game_config {
             (game_config.opponent_id, game_config.referrer_id.clone())
@@ -165,7 +166,7 @@ impl Contract {
         }
     }
 
-    pub  fn get_registered_player(&self, account_id: &AccountId) -> Vault {
+    pub fn get_registered_player(&self, account_id: &AccountId) -> Vault {
         return self.registered_players.get(account_id).expect("Player not registered");
     }
 
@@ -194,6 +195,11 @@ impl Contract {
             None => false,
             Some(_) => true,
         }
+    }
+    pub fn deposit_cheddar(&mut self, account_id: &AccountId, amount: Balance) {
+        let mut vault = self.registered_players.get(account_id).unwrap();
+        vault.storage_deposit += amount;
+        self.registered_players.insert(account_id, &vault);
     }
     pub fn register_player(&mut self, account_id: &AccountId){
         let valut = Vault {total_rewards: 0, storage_deposit: STORAGE_COST_PER_USER};
@@ -257,7 +263,6 @@ impl Contract {
         }
         self.storage_balance()
     }
-
     pub fn start_game(&mut self, player_2_id: AccountId) -> GameId {
         if let Some(player_2_config) = self.available_players.get(&player_2_id) {
             // Check is game initiator (predecessor) player available to play as well
@@ -621,8 +626,8 @@ mod tests {
             .build());
         ctr.make_available(Some(GameConfigNear { 
             opponent_id, 
-            referrer_id 
-        }), available_for);
+            referrer_id,
+        }), amount, available_for);
     }
 
     fn make_available_ft(

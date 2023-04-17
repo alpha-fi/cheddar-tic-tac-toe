@@ -15,6 +15,7 @@ pub(crate) const TIMEOUT_WIN: Duration = 5 * 60; // 5 minutes timeout in seconds
 pub(crate) const MIN_DEPOSIT_CHEDDAR: Balance =  50;
 pub(crate) const MIN_AVAILABLE_FOR: Duration = 1 * 60; // 1 minute 
 pub(crate) const MAX_AVAILABLE_FOR: Duration = 60 * 60; // 1 hour 
+pub(crate) const MIN_BET_CHEDDAR: Balance = 50;
  
 pub(crate) type TokenContractId = AccountId;
 pub(crate) type GameId = u64;

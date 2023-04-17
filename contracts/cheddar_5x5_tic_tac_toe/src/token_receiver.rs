@@ -55,7 +55,7 @@ impl FungibleTokenReceiver for Contract {
         };
 
         log!("deposit {} cheddar from @{}", amount.0, sender_id);
-        let available_complete = self.internal_make_available(game_config, &sender_id);
+        let available_complete = self.make_deposit(&sender_id, amount.0);
 
         if available_complete {
             PromiseOrValue::Value(U128(0))
@@ -66,6 +66,20 @@ impl FungibleTokenReceiver for Contract {
 }
 
 impl Contract {
+    pub(crate) fn make_deposit(
+        &mut self,
+        sender_id: &AccountId,
+        amount: Balance,
+    ) -> bool
+    {
+        if self.is_user_registered(sender_id) {
+            self.make_deposit(sender_id, amount);
+        } else {
+            return false;
+        }
+        true
+
+    }
     pub(crate) fn internal_make_available(
         &mut self,
         game_config: GameConfig,
