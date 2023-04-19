@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::*;
 
 #[near_bindgen]

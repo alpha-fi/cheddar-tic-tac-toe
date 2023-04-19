@@ -33,4 +33,15 @@ impl Contract {
             self.stats.insert(&user.clone(), &stats);
         }
     }
+    #[private]
+    pub fn cheddar_withdraw_callback(&mut self, user: &AccountId, vault: Vault) {
+        if promise_result_as_failed() {
+            log!(
+                "FT withdrawal failed. Recovering state for {} account",
+                user.clone(),
+            );
+            self.registered_players.insert(user, &vault);
+            
+        }
+    }
 }

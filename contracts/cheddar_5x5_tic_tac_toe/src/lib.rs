@@ -58,7 +58,7 @@ pub struct PlayerAvailability {
     available_to: Timestamp,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Vault { 
     total_rewards: Balance,
@@ -170,21 +170,15 @@ impl Contract {
         return self.registered_players.get(account_id).expect("Player not registered");
     }
 
-    #[payable]
     pub fn make_unavailable(&mut self) {
-        assert_one_yocto();
         let account_id = env::predecessor_account_id();
         match self.available_players.get(&account_id) {
             Some(config) => {
-                // refund players deposit
-                let token_id = config.token_id.clone();
+                let bet = config.deposit;
                 self.available_players.remove(&account_id);
-
-                self.internal_transfer(&token_id, &account_id, config.deposit.into())
-                    .then(Self::ext(env::current_account_id())
-                    .with_static_gas(CALLBACK_GAS)
-                    .transfer_deposit_callback(account_id, &config)
-                );
+                let mut vault = self.get_registered_player(&account_id);
+                vault.total_rewards += bet;
+                self.registered_players.insert(&account_id, &vault);
             },
             None => () // skip
         }
@@ -194,6 +188,27 @@ impl Contract {
         match key {
             None => false,
             Some(_) => true,
+        }
+    }
+    #[payable]
+    pub fn withdraw_cheddar(&mut self, amount: Balance) {
+        assert_one_yocto();
+        let caller_id = env::predecessor_account_id();
+        let mut vault = self.registered_players.get(&caller_id).expect("User is not registered. Cannot withdraw.");
+        if amount <= vault.total_rewards {
+            ext_ft::ext(self.cheddar.clone())
+            .with_static_gas(GAS_FOR_FT_TRANSFER)
+            .with_attached_deposit(ONE_YOCTO)
+            .ft_transfer(caller_id.clone(), amount.into(), None).then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .cheddar_withdraw_callback(&caller_id.clone(), vault.clone()),
+            );
+            vault.storage_deposit -= amount;
+            self.registered_players.insert(&caller_id, &vault);
+
+        } else {
+            panic!("Insufficient balance. Requested {}, available {}.", amount, vault.total_rewards);
         }
     }
     pub fn deposit_cheddar(&mut self, account_id: &AccountId, amount: Balance) {
