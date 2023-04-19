@@ -258,9 +258,6 @@ impl Contract {
         let account_id = env::predecessor_account_id();
         if !self.is_user_registered(&account_id) {
             log!("The account is not registered, cannot close an unregistered account");
-            // if  > 0 {
-            //     Promise::new(env::predecessor_account_id()).transfer(storage_deposit);
-            // }
         } else {
             let refund = self.registered_players.remove(&account_id).unwrap().storage_deposit;
             if refund > 0 {
