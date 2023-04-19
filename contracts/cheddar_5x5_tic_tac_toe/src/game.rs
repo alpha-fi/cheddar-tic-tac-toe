@@ -47,7 +47,6 @@ pub struct Coords {
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
 #[serde(crate = "near_sdk::serde")]
 pub struct GameDeposit {
-    pub token_id: TokenContractId,
     pub balance: U128,
 }
 
@@ -417,7 +416,7 @@ mod test {
         "cheddar".parse().unwrap()
     }
     pub fn init_game() -> Game {
-        return Game::create_game(1, user(), opponent(), GameDeposit{token_id: acc_cheddar(), balance: U128(50000)});
+        return Game::create_game(1, user(), opponent(), GameDeposit{balance: U128(50000)});
     }
     #[test]
     fn valid_move() {

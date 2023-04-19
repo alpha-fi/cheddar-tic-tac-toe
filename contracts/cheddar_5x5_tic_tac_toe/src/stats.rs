@@ -91,7 +91,6 @@ impl Contract {
         }
     }
     pub(crate) fn internal_update_stats(&mut self,
-        token_id: Option<&AccountId>,
         account_id: &AccountId,
         action: UpdateStatsAction,
         additional_account_id: Option<AccountId>,

@@ -8,7 +8,7 @@ impl Contract {
             log!(
                 "transfer available deposit {} of {} token failed. recovering @{} state",
                 config.deposit,
-                config.token_id,
+                self.cheddar,
                 user.clone()
             );
             self.available_players.insert(&user, config);

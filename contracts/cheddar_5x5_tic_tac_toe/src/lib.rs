@@ -46,19 +46,10 @@ pub enum StorageKey {
     Affiliates {account_id : AccountId},
     TotalRewards {account_id : AccountId},
     TotalAffiliateRewards {account_id : AccountId},
-    PlayerAvailability,
     RegisteredPlayers,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, PartialEq, Eq)]
-pub struct PlayerAvailability {
-    /// unix timestamp in seconds
-    available_from: Timestamp, 
-    /// unix timestamp in seconds
-    available_to: Timestamp,
-}
-
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Vault { 
     total_rewards: Balance,
@@ -89,7 +80,6 @@ pub struct Contract {
     /// storage for printing results
     pub max_stored_games: u8,
     pub stored_games: UnorderedMap<GameId, GameLimitedView>,
-    pub player_availability: UnorderedMap<AccountId, PlayerAvailability>,
     /// registered players and their total_rewards and deposit NEAR to cover storage
     pub registered_players: UnorderedMap<AccountId, Vault>,
 }
@@ -120,7 +110,6 @@ impl Contract {
             max_turn_duration: 2*60,
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames),
-            player_availability: UnorderedMap::new(StorageKey::PlayerAvailability),
             registered_players: UnorderedMap::new(StorageKey::RegisteredPlayers),
         }
     }
@@ -150,14 +139,13 @@ impl Contract {
         };
         self.available_players.insert(account_id,
             &GameConfig {
-                token_id: AccountId::new_unchecked("near".into()),
                 deposit,
                 opponent_id,
                 referrer_id: referrer_id.clone(),
                 created_at: nano_to_sec(cur_timestamp),
+                available_to: nano_to_sec(cur_timestamp) + available_for,
             }
         );
-        self.player_availability.insert(account_id, &PlayerAvailability { available_from: nano_to_sec(cur_timestamp), available_to: nano_to_sec(cur_timestamp) + available_for});
         
         self.internal_check_player_available(&account_id);
 
@@ -172,6 +160,9 @@ impl Contract {
 
     pub fn make_unavailable(&mut self) {
         let account_id = env::predecessor_account_id();
+        self.refund_player(&account_id);
+    }
+    pub fn refund_player(&mut self, account_id: &AccountId) {
         match self.available_players.get(&account_id) {
             Some(config) => {
                 let bet = config.deposit;
@@ -286,7 +277,6 @@ impl Contract {
 
             // Get predecessor's available deposit
             let player_1_config = self.internal_get_available_player(&player_1_id);
-            let player_1_config_token = player_1_config.token_id;
             let player_1_deposit = player_1_config.deposit;
 
             self.internal_check_player_available(&player_1_id);
@@ -306,9 +296,6 @@ impl Contract {
             );
 
             let game_id = self.next_game_id;
-            let token_id = player_2_config.token_id;
-
-            assert_eq!(token_id, player_1_config_token, "Mismatch deposit token! Both players have to deposit the same token to play the game");
             // deposit * 2
             let balance = match player_2_config.deposit.checked_mul(2) {
                 Some(value) => value,
@@ -316,10 +303,9 @@ impl Contract {
             };
 
             let reward = GameDeposit {
-                token_id: token_id.clone(),
                 balance: balance.into()
             };
-            log!("game reward:{} in token {:?} ", balance, token_id.clone());
+            log!("game reward:{} in token {:?} ", balance, self.cheddar);
             
             let seed = near_sdk::env::random_seed();
             let (first_player, second_player) = match seed[0] % 2 {
@@ -341,8 +327,8 @@ impl Contract {
                 self.internal_add_referrer(&player_2_id, &referrer_id);
             }
 
-            self.internal_update_stats(Some(&token_id), &player_1_id, UpdateStatsAction::AddPlayedGame, None, None);
-            self.internal_update_stats(Some(&token_id), &player_2_id, UpdateStatsAction::AddPlayedGame, None, None);
+            self.internal_update_stats(&player_1_id, UpdateStatsAction::AddPlayedGame, None, None);
+            self.internal_update_stats(&player_2_id, UpdateStatsAction::AddPlayedGame, None, None);
             game_id
         } else {
             panic!("Your opponent is not ready");
@@ -419,7 +405,6 @@ impl Contract {
                         player1,
                         player2,
                         reward_or_tie_refund: GameDeposit {
-                            token_id: game.reward().token_id,
                             balance
                         },
                         tiles: game.to_tiles(),
@@ -549,7 +534,6 @@ impl Contract {
             player1: winner.clone(),
             player2: looser.clone(),
             reward_or_tie_refund: GameDeposit {
-                token_id: game.reward().token_id,
                 balance
             },
             tiles: game.to_tiles(),
@@ -766,14 +750,12 @@ mod tests {
         make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
-                token_id: acc_cheddar(), 
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
                 referrer_id: Some(referrer()),
                 created_at: 0
             }),
-            (opponent(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (opponent(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
                 referrer_id: None,
@@ -863,14 +845,12 @@ mod tests {
         make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
-                token_id: near(), 
                 deposit: U128(ONE_NEAR), 
                 opponent_id: None, 
                 referrer_id: Some(referrer()),
                 created_at: 0
             }),
             (opponent(), GameConfigView { 
-                token_id: near(), 
                 deposit: U128(ONE_NEAR), 
                 opponent_id: Some(user()), 
                 referrer_id: None,
@@ -898,15 +878,13 @@ mod tests {
         make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
         make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
-            (user(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (user(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
                 referrer_id: Some(referrer()),
                 created_at: 0
             }),
-            (opponent(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (opponent(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
                 referrer_id: None,
@@ -950,14 +928,12 @@ mod tests {
         make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
-                token_id: acc_cheddar(), 
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
                 referrer_id: Some(referrer()),
                 created_at: 0 
             }),
-            (opponent(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (opponent(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
                 referrer_id: None,
@@ -1611,7 +1587,7 @@ mod tests {
     }
     #[test] 
     fn test_player_piece_binding() {
-        let game = Game::create_game(1, user(), opponent(), GameDeposit { token_id: acc_cheddar(), balance: U128(5000) });
+        let game = Game::create_game(1, user(), opponent(), GameDeposit {balance: U128(5000) });
         assert_eq!(game.current_piece, Piece::O);
     }
     #[test]

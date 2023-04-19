@@ -56,25 +56,12 @@ impl Contract {
         let expired_players: Vec<(AccountId, GameConfig)> = self
             .available_players
             .iter()
-            .filter(|(_, config)| current_timestamp - config.created_at > MAX_TIME_TO_BE_AVAILABLE)
+            .filter(|(_, config)| current_timestamp > config.available_to)
             .map(|(account_id, config)| (account_id.clone(), config))
             .collect();
         if !expired_players.is_empty() {
-            for (account_id, config) in expired_players.iter() {
-                let token_id = config.token_id.clone();
-                self.available_players.remove(&account_id);
-                self.internal_transfer(&token_id, &account_id, config.deposit.into())
-                    .then(
-                        Self::ext(env::current_account_id())
-                            .with_static_gas(CALLBACK_GAS)
-                            .transfer_deposit_callback(account_id.clone(), config),
-                    );
-                log!(
-                    "Remove expired player @{}, refund {} of {}",
-                    account_id,
-                    config.deposit,
-                    config.token_id
-                );
+            for (account_id, _) in expired_players.iter() {
+                self.refund_player(account_id);
             }
         }
         self.last_update_timestamp = nano_to_sec(ts);
@@ -82,19 +69,12 @@ impl Contract {
 
     pub(crate) fn internal_transfer(
         &mut self,
-        token_id: &TokenContractId,
         receiver_id: &AccountId,
-        amount: U128,
-    ) -> Promise {
-        if token_id == &AccountId::new_unchecked("near".into()) {
-            Promise::new(receiver_id.clone()).transfer(amount.0)
-        } else {
-            ext_ft::ext(token_id.clone())
-                .with_static_gas(GAS_FOR_FT_TRANSFER)
-                .with_attached_deposit(ONE_YOCTO)
-                .ft_transfer(receiver_id.clone(), amount, None)
-            // TODO (finish): .then(callback to check the transfer)
-        }
+        amount: u128,
+    )  {
+        let mut vault = self.get_registered_player(receiver_id);
+        vault.total_rewards += amount;
+        self.registered_players.insert(receiver_id, &vault);
     }
 
     pub(crate) fn internal_distribute_reward(
@@ -104,7 +84,6 @@ impl Contract {
     ) -> U128 {
         let reward = self.internal_get_game_reward(game_id);
         let players_deposit = reward.balance;
-        let token_id = reward.token_id.clone();
         let fees_amount = players_deposit
             .0
             .checked_div(BASIS_P.into())
@@ -117,23 +96,16 @@ impl Contract {
         if let Some(winner_id) = winner {
             log!("Winner is {}. Reward: {}", winner_id, winner_reward);
             let stats = self.get_stats(winner_id);
-            self.internal_transfer(&token_id, winner_id, winner_reward.into())
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(CALLBACK_GAS)
-                    .transfer_callback(winner_id.clone(), &stats),
-            );
+            self.internal_transfer(winner_id, winner_reward.into());
 
-            self.internal_distribute_fee(&token_id, fees_amount, winner_id);
+            self.internal_distribute_fee(fees_amount, winner_id);
             self.internal_update_stats(
-                Some(&token_id),
                 winner_id,
                 UpdateStatsAction::AddWonGame,
                 None,
                 None,
             );
             self.internal_update_stats(
-                Some(&token_id),
                 winner_id,
                 UpdateStatsAction::AddTotalReward,
                 None,
@@ -150,14 +122,13 @@ impl Contract {
                 "Incorrect Tie refund amount calculation"
             );
             log!("Tie. Refund: {}", refund_amount);
-            self.internal_tie_refund(game_id, &token_id, refund_amount);
+            self.internal_tie_refund(game_id, refund_amount);
             refund_amount.into()
         }
     }
 
     pub(crate) fn internal_distribute_fee(
         &mut self,
-        token_id: &TokenContractId,
         service_fee: Balance,
         account_id: &AccountId,
     ) -> Balance {
@@ -177,14 +148,13 @@ impl Contract {
                     computed_referrer_fee
                 );
                 self.internal_update_stats(
-                    Some(token_id),
                     &referrer_id,
                     UpdateStatsAction::AddAffiliateReward,
                     None,
                     Some(computed_referrer_fee),
                 );
                 // transfer fee to referrer
-                self.internal_transfer(&token_id, &referrer_id, computed_referrer_fee.into());
+                self.internal_transfer(&referrer_id, computed_referrer_fee.into());
             }
 
             computed_referrer_fee
@@ -198,12 +168,11 @@ impl Contract {
     pub(crate) fn internal_tie_refund(
         &mut self,
         game_id: &GameId,
-        token_id: &TokenContractId,
         refund_amount: Balance,
     ) {
         let (player1, player2) = self.internal_get_game_players(game_id);
-        self.internal_transfer(&token_id, &player1, refund_amount.into());
-        self.internal_transfer(&token_id, &player2, refund_amount.into());
+        self.internal_transfer(&player1, refund_amount.into());
+        self.internal_transfer(&player2, refund_amount.into());
     }
 
     pub(crate) fn internal_stop_expired_game(&mut self, game_id: &GameId, looser: AccountId) {
@@ -214,7 +183,7 @@ impl Contract {
             "Current game isn't active"
         );
 
-        self.internal_update_stats(None, &looser, UpdateStatsAction::AddPenaltyGame, None, None);
+        self.internal_update_stats(&looser, UpdateStatsAction::AddPenaltyGame, None, None);
 
         let (player1, player2) = self.internal_get_game_players(game_id);
 
@@ -235,7 +204,6 @@ impl Contract {
             player1,
             player2,
             reward_or_tie_refund: GameDeposit {
-                token_id: game.reward().token_id,
                 balance,
             },
             tiles: game.to_tiles(),
@@ -273,14 +241,12 @@ impl Contract {
     pub(crate) fn internal_add_referrer(&mut self, player_id: &AccountId, referrer_id: &AccountId) {
         if self.stats.get(player_id).is_none() && self.is_account_exists(referrer_id) {
             self.internal_update_stats(
-                None,
                 player_id,
                 UpdateStatsAction::AddReferral,
                 Some(referrer_id.clone()),
                 None,
             );
             self.internal_update_stats(
-                None,
                 referrer_id,
                 UpdateStatsAction::AddAffiliate,
                 Some(player_id.clone()),
