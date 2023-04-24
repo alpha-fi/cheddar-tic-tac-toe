@@ -49,7 +49,7 @@ pub enum StorageKey {
     RegisteredPlayers,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Vault { 
     total_rewards: Balance,
@@ -173,6 +173,9 @@ impl Contract {
             },
             None => () // skip
         }
+    }
+    pub fn get_registered_players(&self) -> Vec<(AccountId, Vault)> {
+        return self.registered_players.to_vec();
     }
     pub fn is_user_registered(&self, account_id: &AccountId) -> bool {
         let key = self.registered_players.get(account_id);
@@ -635,6 +638,24 @@ mod tests {
             referrer_id,
         }), amount, available_for);
     }
+    fn storage_deposit(
+        ctx: &mut VMContextBuilder,
+        ctr: &mut Contract,
+        user: &AccountId,
+        amount: Balance
+
+    ) -> StorageBalance {
+        testing_env!(ctx.attached_deposit(amount).predecessor_account_id(user.clone()).signer_account_id(user.clone()).build());
+        return ctr.storage_deposit(None, None);
+    }
+    fn unregister_account(
+        ctx: &mut VMContextBuilder,
+        ctr: &mut Contract,
+        user: &AccountId
+    ) -> StorageBalance {
+        testing_env!(ctx.predecessor_account_id(user.clone()).signer_account_id(user.clone()).build());
+        return ctr.unregister_account();
+    }
 
     fn make_available_ft(
         ctx: &mut VMContextBuilder,
@@ -845,27 +866,24 @@ mod tests {
     }
 
     #[test]
-    fn make_available_unavailable_near() {
+    fn register_unregister_player() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
-        assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
-        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
-            (user(), GameConfigView { 
-                deposit: U128(ONE_NEAR), 
-                opponent_id: None, 
-                referrer_id: Some(referrer()),
-                created_at: 0
+        assert!(ctr.get_registered_players().is_empty());
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        assert_eq!(ctr.get_registered_players(), Vec::<(AccountId, Vault)>::from([
+            (user(), Vault { 
+                total_rewards: 0 as u128, 
+                storage_deposit: STORAGE_COST_PER_USER, 
             }),
-            (opponent(), GameConfigView { 
-                deposit: U128(ONE_NEAR), 
-                opponent_id: Some(user()), 
-                referrer_id: None,
-                created_at: 0
+            (opponent(), Vault { 
+                total_rewards: 0 as u128, 
+                storage_deposit: STORAGE_COST_PER_USER, 
             }),
         ]));
-        make_unavailable(&mut ctx, &mut ctr, &user());
-        make_unavailable(&mut ctx, &mut ctr, &opponent());
+        (&mut ctx, &mut ctr, &user());
+        unregister_account(&mut ctx, &mut ctr, &user());
+        unregister_account(&mut ctx, &mut ctr, &opponent());
         assert!(ctr.get_available_players().is_empty());
     }
     #[test]
