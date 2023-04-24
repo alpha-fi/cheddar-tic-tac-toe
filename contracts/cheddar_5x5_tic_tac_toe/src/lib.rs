@@ -584,9 +584,6 @@ mod tests {
     fn acc_cheddar() -> AccountId {
         "cheddar".parse().unwrap()
     }
-    fn near() -> AccountId {
-        "near".parse().unwrap()
-    }
 
     fn setup_contract(
         predecessor: AccountId,
@@ -619,7 +616,7 @@ mod tests {
         (context, contract)
     }
 
-    fn make_available_near(
+    fn make_available(
         ctx: &mut VMContextBuilder,
         ctr: &mut Contract,
         user: &AccountId,
@@ -657,7 +654,7 @@ mod tests {
         return ctr.unregister_account();
     }
 
-    fn make_available_ft(
+    fn make_deposit(
         ctx: &mut VMContextBuilder,
         ctr: &mut Contract,
         user: &AccountId,
@@ -769,18 +766,17 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()),
+                referrer_id: None,
                 created_at: 0
             }),
             (opponent(), GameConfigView {  
@@ -794,8 +790,12 @@ mod tests {
         let user2 = "user2".parse().unwrap();
         let opponent2 = "opponent2".parse().unwrap();
 
-        make_available_near(&mut ctx, &mut ctr, &user2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        storage_deposit(&mut ctx, &mut ctr, &user2, ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent2, ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user2, ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent2, ONE_CHEDDAR, msg1);
+        make_available(&mut ctx, &mut ctr, &user2, ONE_CHEDDAR, Some(opponent2.clone()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent2, ONE_CHEDDAR, Some(user2.clone()), None, MAX_AVAILABLE_FOR);
 
         let game_id_cheddar = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         let game_id_near = start_game(&mut ctx, &mut ctr, &user2, &opponent2);
@@ -858,14 +858,6 @@ mod tests {
     }
 
     #[test]
-    fn test_near_deposit() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
-        assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
-    }
-
-    #[test]
     fn register_unregister_player() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
         assert!(ctr.get_registered_players().is_empty());
@@ -895,18 +887,17 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()),
+                referrer_id: None,
                 created_at: 0
             }),
             (opponent(), GameConfigView {  
@@ -921,21 +912,6 @@ mod tests {
         assert!(ctr.get_available_players().is_empty());
     }
     #[test]
-    #[should_panic(expected="Mismatch deposit token! Both players have to deposit the same token to play the game")]
-    fn start_game_diff_tokens() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
-        assert!(ctr.get_available_players().is_empty());
-        let gc1 = GameConfigArgs { 
-            opponent_id: Some(opponent()), 
-            referrer_id: Some(referrer()) 
-        };
-        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
-        start_game(&mut ctx, &mut ctr, &user(), &opponent());
-    }
-    #[test]
     fn test_give_up() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
         assert!(ctr.get_available_players().is_empty());
@@ -944,18 +920,17 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()),
+                referrer_id: None,
                 created_at: 0 
             }),
             (opponent(), GameConfigView {  
@@ -994,13 +969,12 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1034,7 +1008,7 @@ mod tests {
         assert_eq!(winner ,Some(GameResult::Win(player_2)));
 
         let player_1_stats = ctr.get_stats(&user());
-        let player_2_stats = ctr.get_stats(&&opponent());
+        let player_2_stats = ctr.get_stats(&opponent());
         println!("{:#?}", player_1_stats);
         println!("{:#?}", player_2_stats);
         assert!(
@@ -1057,13 +1031,12 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1111,13 +1084,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1182,13 +1154,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1227,13 +1198,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1418,12 +1388,18 @@ mod tests {
         println!("TotalStatsNum: {:#?}", ctr.get_total_stats_num());
         println!("AccountsPlayed: {:#?}", ctr.get_accounts_played());
         println!("UserPenalties: {:#?}", ctr.get_user_penalties(&user()));
-
         println!("PenaltyUsers: {:#?}", ctr.get_penalty_users());
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        let msg = String::from("test");
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &&"third".parse().unwrap(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         assert_eq!(ctr.get_available_players().len(), 3);
         testing_env!(ctx
@@ -1438,15 +1414,17 @@ mod tests {
             .build()
         );
         print!("here\\");
-        make_available_near(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        storage_deposit(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_CHEDDAR, msg.clone());
+        make_available(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         assert_eq!(ctr.get_available_players().len(), 1);
         assert_eq!(ctr.get_available_players()[0].0, "fourth".parse().unwrap());
 
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         // first game starts at (max_game_duration + MAX_TIME_TO_BE_AVAILABLE +2) timestamp
         let first_game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
@@ -1529,13 +1507,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1575,13 +1552,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1624,13 +1600,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         

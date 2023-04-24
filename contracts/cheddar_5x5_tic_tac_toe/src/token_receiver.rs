@@ -64,7 +64,7 @@ impl Contract {
     ) -> bool
     {
         if self.is_user_registered(sender_id) {
-            self.make_deposit(sender_id, amount);
+            self.deposit_cheddar(sender_id, amount);
         } else {
             return false;
         }
