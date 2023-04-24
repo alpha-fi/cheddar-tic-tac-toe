@@ -41,7 +41,6 @@ impl Contract {
                 user.clone(),
             );
             self.registered_players.insert(user, &vault);
-            
         }
     }
 }
