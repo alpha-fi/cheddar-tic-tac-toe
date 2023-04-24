@@ -2,8 +2,6 @@ use std::convert::TryInto;
 
 use crate::*;
 
-pub(crate) const MAX_TIME_TO_BE_AVAILABLE: u64 = 24 * 60 * 60; // 1 day in seconds
-
 #[allow(unused)]
 pub(crate) const NO_DEPOSIT: u128 = 0;
 pub(crate) const CALLBACK_GAS: Gas = Gas(Gas::ONE_TERA.0 * 5);
@@ -17,15 +15,12 @@ pub(crate) const MIN_AVAILABLE_FOR: Duration = 1 * 60; // 1 minute
 pub(crate) const MAX_AVAILABLE_FOR: Duration = 60 * 60; // 1 hour 
 pub(crate) const MIN_BET_CHEDDAR: Balance = 50;
  
-pub(crate) type TokenContractId = AccountId;
 pub(crate) type GameId = u64;
 pub(crate) type AffiliateId = AccountId;
 
 /// This constant can be used to set the board size
 pub(crate) const BOARD_SIZE: u8 = 25;
 pub(crate) const MAX_NUM_TURNS: u64 = BOARD_SIZE as u64 * BOARD_SIZE as u64;
-
-pub(crate) const AVAILABLE_FOR_DEFAULT: Duration = 2 * 60; // 2 minutes in seconds
 
 /// pesimistic assumption of the storage_deposit needed for every user 
 pub(crate) const STORAGE_COST_PER_USER: Balance = 200_000_000_000_000_000_000_000; // 0.2 NEAR in YOCTONEAR

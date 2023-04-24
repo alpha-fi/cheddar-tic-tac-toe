@@ -211,6 +211,10 @@ impl Contract {
         let valut = Vault {total_rewards: 0, storage_deposit: STORAGE_COST_PER_USER};
         self.registered_players.insert(account_id, &valut);
     }
+    pub fn get_cheddar_balance(&self, account_id: &AccountId) -> Balance {
+        assert!(self.is_user_registered(account_id), "User is not registered");
+        return self.registered_players.get(account_id).unwrap().total_rewards; 
+    }
 
     #[allow(unused_variables)]
     #[payable]
@@ -561,6 +565,9 @@ mod tests {
     const MIN_GAME_DURATION: u32 = 25 * 60;
     const ONE_CHEDDAR:Balance = ONE_NEAR;
     const MIN_FEES: u32 = 0;
+    pub(crate) const AVAILABLE_FOR_DEFAULT: Duration = 2 * 60; // 2 minutes in seconds
+    pub(crate) const MAX_TIME_TO_BE_AVAILABLE: u64 = 24 * 60 * 60; // 1 day in seconds
+
 
     fn user() -> AccountId {
         "user".parse().unwrap()
