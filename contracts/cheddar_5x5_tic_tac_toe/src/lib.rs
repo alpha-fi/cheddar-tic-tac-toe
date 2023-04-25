@@ -160,9 +160,9 @@ impl Contract {
 
     pub fn make_unavailable(&mut self) {
         let account_id = env::predecessor_account_id();
-        self.refund_player(&account_id);
+        self.add_cheddar_balance(&account_id);
     }
-    pub fn refund_player(&mut self, account_id: &AccountId) {
+    pub fn add_cheddar_balance(&mut self, account_id: &AccountId) {
         match self.available_players.get(&account_id) {
             Some(config) => {
                 let bet = config.deposit;
@@ -196,7 +196,7 @@ impl Contract {
             .ft_transfer(caller_id.clone(), amount.into(), None).then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(CALLBACK_GAS)
-                    .cheddar_withdraw_callback(&caller_id.clone(), vault.clone()),
+                    .cheddar_withdraw_callback(&caller_id.clone(), amount.clone()),
             );
             vault.storage_deposit -= amount;
             self.registered_players.insert(&caller_id, &vault);

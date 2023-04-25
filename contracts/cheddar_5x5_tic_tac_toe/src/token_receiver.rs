@@ -46,7 +46,7 @@ impl FungibleTokenReceiver for Contract {
             self.min_deposit
         );
         log!("deposit {} cheddar from @{}", amount.0, sender_id);
-        let available_complete = self.make_deposit(&sender_id, amount.0);
+        let available_complete = self.try_deposit_cheddar(&sender_id, amount.0);
 
         if available_complete {
             PromiseOrValue::Value(U128(0))
@@ -57,7 +57,8 @@ impl FungibleTokenReceiver for Contract {
 }
 
 impl Contract {
-    pub(crate) fn make_deposit(
+    /// if the user is registered its balance will be increased, otherwise returns false and nothing will happen
+    pub(crate) fn try_deposit_cheddar(
         &mut self,
         sender_id: &AccountId,
         amount: Balance,

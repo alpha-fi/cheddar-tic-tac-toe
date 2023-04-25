@@ -34,13 +34,9 @@ impl Contract {
         }
     }
     #[private]
-    pub fn cheddar_withdraw_callback(&mut self, user: &AccountId, vault: Vault) {
+    pub fn cheddar_withdraw_callback(&mut self, user: &AccountId, amount: Balance) {
         if promise_result_as_failed() {
-            log!(
-                "FT withdrawal failed. Recovering state for {} account",
-                user.clone(),
-            );
-            self.registered_players.insert(user, &vault);
+            self.deposit_cheddar(user, amount);
         }
     }
 }

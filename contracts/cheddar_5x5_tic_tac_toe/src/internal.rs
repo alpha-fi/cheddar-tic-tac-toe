@@ -61,7 +61,7 @@ impl Contract {
             .collect();
         if !expired_players.is_empty() {
             for (account_id, _) in expired_players.iter() {
-                self.refund_player(account_id);
+                self.add_cheddar_balance(account_id);
             }
         }
         self.last_update_timestamp = nano_to_sec(ts);
