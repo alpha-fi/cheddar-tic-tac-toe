@@ -45,17 +45,8 @@ impl FungibleTokenReceiver for Contract {
             "deposited amount must be more than {}",
             self.min_deposit
         );
-
-        let game_config = if msg.is_empty() {
-            GameConfig::with_only_token_params(&token_id, amount.0)
-        } else {
-            let game_args: GameConfigArgs =
-                near_sdk::serde_json::from_str(&msg).expect("Config is invalid");
-            GameConfig::from_transfer_msg(&token_id, amount.0, &game_args)
-        };
-
         log!("deposit {} cheddar from @{}", amount.0, sender_id);
-        let available_complete = self.internal_make_available(game_config, &sender_id);
+        let available_complete = self.try_deposit_cheddar(&sender_id, amount.0);
 
         if available_complete {
             PromiseOrValue::Value(U128(0))
@@ -66,41 +57,19 @@ impl FungibleTokenReceiver for Contract {
 }
 
 impl Contract {
-    pub(crate) fn internal_make_available(
+    /// if the user is registered its balance will be increased, otherwise returns false and nothing will happen
+    pub(crate) fn try_deposit_cheddar(
         &mut self,
-        game_config: GameConfig,
         sender_id: &AccountId,
-    ) -> bool {
-        let amount = game_config.deposit;
-        let token_id = game_config.token_id;
-        let referrer_id: Option<AccountId> = game_config.referrer_id.clone();
-        assert!(
-            self.available_players.get(&sender_id).is_none(),
-            "Already in the waiting list the list"
-        );
-
-        //create config
-        self.available_players.insert(
-            &sender_id,
-            &GameConfig {
-                token_id: token_id.clone(),
-                deposit: amount,
-                opponent_id: game_config.opponent_id,
-                referrer_id,
-                created_at: nano_to_sec(env::block_timestamp()).into(),
-            },
-        );
-
-        self.internal_check_player_available(&sender_id);
-        if let Some(referrer_id) = game_config.referrer_id {
-            self.internal_add_referrer(&sender_id, &referrer_id);
+        amount: Balance,
+    ) -> bool
+    {
+        if self.is_user_registered(sender_id) {
+            self.deposit_cheddar(sender_id, amount);
+        } else {
+            return false;
         }
-        log!(
-            "Success deposit from @{} with {} of `{}` ",
-            sender_id,
-            amount,
-            token_id
-        );
         true
+
     }
 }

@@ -8,7 +8,7 @@ impl Contract {
             log!(
                 "transfer available deposit {} of {} token failed. recovering @{} state",
                 config.deposit,
-                config.token_id,
+                self.cheddar,
                 user.clone()
             );
             self.available_players.insert(&user, config);
@@ -31,6 +31,12 @@ impl Contract {
                     total_affiliate_reward: stats.total_affiliate_reward,
             };
             self.stats.insert(&user.clone(), &stats);
+        }
+    }
+    #[private]
+    pub fn cheddar_withdraw_callback(&mut self, user: &AccountId, amount: Balance) {
+        if promise_result_as_failed() {
+            self.deposit_cheddar(user, amount);
         }
     }
 }

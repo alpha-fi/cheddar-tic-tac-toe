@@ -47,7 +47,6 @@ pub struct Coords {
 #[cfg_attr(not(target_arch = "wasm32"), derive(Debug, PartialEq))]
 #[serde(crate = "near_sdk::serde")]
 pub struct GameDeposit {
-    pub token_id: TokenContractId,
     pub balance: U128,
 }
 
@@ -62,7 +61,7 @@ pub struct Game {
     pub total_turns: u8,
     pub initiated_at: Timestamp,
     pub last_turn_timestamp: Timestamp,
-    pub current_duration_sec: Duration,
+    pub current_duration: Duration,
     //board fields
     pub last_move: Option<Coords>,
     pub winner: Option<Winner>,
@@ -96,7 +95,7 @@ impl Game {
             total_turns: 0,
             initiated_at: nano_to_sec(env::block_timestamp()),
             last_turn_timestamp: 0,
-            current_duration_sec: 0,
+            current_duration: 0,
             //board fields
             last_move: None,
             winner: None,
@@ -417,7 +416,7 @@ mod test {
         "cheddar".parse().unwrap()
     }
     pub fn init_game() -> Game {
-        return Game::create_game(1, user(), opponent(), GameDeposit{token_id: acc_cheddar(), balance: U128(50000)});
+        return Game::create_game(1, user(), opponent(), GameDeposit{balance: U128(50000)});
     }
     #[test]
     fn valid_move() {

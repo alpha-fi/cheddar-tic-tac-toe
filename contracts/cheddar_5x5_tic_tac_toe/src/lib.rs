@@ -1,5 +1,6 @@
 use std::fs::create_dir;
 
+use near_contract_standards::storage_management::StorageBalance;
 use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, Duration, PanicOnDefault,
     Promise, PromiseOrValue, PromiseResult, assert_one_yocto, Timestamp
@@ -7,7 +8,7 @@ use near_sdk::{
 use near_sdk::{
     env, ext_contract, log, near_bindgen, ONE_YOCTO, require
 };
-use near_sdk::json_types::U128;
+use near_sdk::json_types::{U128};
 use near_sdk::borsh::{self, BorshSerialize, BorshDeserialize};
 use near_sdk::serde::{Serialize, Deserialize};
 use near_sdk::collections::{UnorderedMap, UnorderedSet};
@@ -45,15 +46,14 @@ pub enum StorageKey {
     Affiliates {account_id : AccountId},
     TotalRewards {account_id : AccountId},
     TotalAffiliateRewards {account_id : AccountId},
-    PlayerAvailability,
+    RegisteredPlayers,
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct PlayerAvailability {
-    /// unix timestamp in seconds
-    available_from: Timestamp, 
-    /// unix timestamp in seconds
-    available_to: Timestamp,
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(crate = "near_sdk::serde")]
+pub struct Vault { 
+    total_rewards: Balance,
+    storage_deposit: Balance,
 }
 
 #[near_bindgen]
@@ -80,7 +80,8 @@ pub struct Contract {
     /// storage for printing results
     pub max_stored_games: u8,
     pub stored_games: UnorderedMap<GameId, GameLimitedView>,
-    pub player_availability: UnorderedMap<AccountId, PlayerAvailability>,
+    /// registered players and their total_rewards and deposit NEAR to cover storage
+    pub registered_players: UnorderedMap<AccountId, Vault>,
 }
 #[near_bindgen]
 impl Contract {
@@ -109,7 +110,7 @@ impl Contract {
             max_turn_duration: 2*60,
             max_stored_games: config.max_stored_games,
             stored_games: UnorderedMap::new(StorageKey::StoredGames),
-            player_availability: UnorderedMap::new(StorageKey::PlayerAvailability)
+            registered_players: UnorderedMap::new(StorageKey::RegisteredPlayers),
         }
     }
 
@@ -118,6 +119,7 @@ impl Contract {
     pub fn make_available(
         &mut self,
         game_config: Option<GameConfigNear>,
+        bet: Balance,
         available_for: Duration,
     ) {
         let cur_timestamp = env::block_timestamp();
@@ -127,8 +129,8 @@ impl Contract {
         let account_id: &AccountId = &env::predecessor_account_id();
         assert!(self.available_players.get(account_id).is_none(), "Already in the waiting list the list");
 
-        let deposit: Balance = env::attached_deposit();
-        assert!(deposit >= MIN_DEPOSIT_CHEDDAR, "Deposit is too small. Attached: {}, Required: {}", deposit, MIN_DEPOSIT_CHEDDAR);
+        let deposit: Balance = bet;
+        assert!(bet >= MIN_BET_CHEDDAR, "Bet is too small. Required at least: {}", MIN_DEPOSIT_CHEDDAR);
 
         let (opponent_id, referrer_id) = if let Some(game_config) = game_config {
             (game_config.opponent_id, game_config.referrer_id.clone())
@@ -137,14 +139,13 @@ impl Contract {
         };
         self.available_players.insert(account_id,
             &GameConfig {
-                token_id: AccountId::new_unchecked("near".into()),
                 deposit,
                 opponent_id,
                 referrer_id: referrer_id.clone(),
                 created_at: nano_to_sec(cur_timestamp),
+                available_until: nano_to_sec(cur_timestamp) + available_for,
             }
         );
-        self.player_availability.insert(account_id, &PlayerAvailability { available_from: nano_to_sec(cur_timestamp), available_to: nano_to_sec(cur_timestamp) + available_for});
         
         self.internal_check_player_available(&account_id);
 
@@ -153,26 +154,125 @@ impl Contract {
         }
     }
 
-    #[payable]
+    pub fn get_registered_player(&self, account_id: &AccountId) -> Vault {
+        return self.registered_players.get(account_id).expect("Player not registered");
+    }
+
     pub fn make_unavailable(&mut self) {
-        assert_one_yocto();
         let account_id = env::predecessor_account_id();
+        self.add_cheddar_balance(&account_id);
+    }
+    pub fn add_cheddar_balance(&mut self, account_id: &AccountId) {
         match self.available_players.get(&account_id) {
             Some(config) => {
-                // refund players deposit
-                let token_id = config.token_id.clone();
+                let bet = config.deposit;
                 self.available_players.remove(&account_id);
-
-                self.internal_transfer(&token_id, &account_id, config.deposit.into())
-                    .then(Self::ext(env::current_account_id())
-                    .with_static_gas(CALLBACK_GAS)
-                    .transfer_deposit_callback(account_id, &config)
-                );
+                let mut vault = self.get_registered_player(&account_id);
+                vault.total_rewards += bet;
+                self.registered_players.insert(&account_id, &vault);
             },
             None => () // skip
         }
     }
+    pub fn get_registered_players(&self) -> Vec<(AccountId, Vault)> {
+        return self.registered_players.to_vec();
+    }
+    pub fn is_user_registered(&self, account_id: &AccountId) -> bool {
+        let key = self.registered_players.get(account_id);
+        match key {
+            None => false,
+            Some(_) => true,
+        }
+    }
+    #[payable]
+    pub fn withdraw_cheddar(&mut self, amount: Balance) {
+        assert_one_yocto();
+        let caller_id = env::predecessor_account_id();
+        let mut vault = self.registered_players.get(&caller_id).expect("User is not registered. Cannot withdraw.");
+        if amount <= vault.total_rewards {
+            ext_ft::ext(self.cheddar.clone())
+            .with_static_gas(GAS_FOR_FT_TRANSFER)
+            .with_attached_deposit(ONE_YOCTO)
+            .ft_transfer(caller_id.clone(), amount.into(), None).then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .cheddar_withdraw_callback(&caller_id.clone(), amount.clone()),
+            );
+            vault.storage_deposit -= amount;
+            self.registered_players.insert(&caller_id, &vault);
 
+        } else {
+            panic!("Insufficient balance. Requested {}, available {}.", amount, vault.total_rewards);
+        }
+    }
+    pub fn deposit_cheddar(&mut self, account_id: &AccountId, amount: Balance) {
+        let mut vault = self.registered_players.get(account_id).unwrap();
+        vault.storage_deposit += amount;
+        self.registered_players.insert(account_id, &vault);
+    }
+    pub fn register_player(&mut self, account_id: &AccountId){
+        let valut = Vault {total_rewards: 0, storage_deposit: STORAGE_COST_PER_USER};
+        self.registered_players.insert(account_id, &valut);
+    }
+    pub fn get_cheddar_balance(&self, account_id: &AccountId) -> Balance {
+        assert!(self.is_user_registered(account_id), "User is not registered");
+        return self.registered_players.get(account_id).unwrap().total_rewards; 
+    }
+
+    #[allow(unused_variables)]
+    #[payable]
+    pub fn storage_deposit(
+        &mut self,
+        account_id: Option<AccountId>,
+        registration_only: Option<bool>,
+    ) -> StorageBalance {
+        let storage_deposit: Balance = env::attached_deposit();
+        let account_id = account_id
+            .map(|a| a.into())
+            .unwrap_or_else(|| env::predecessor_account_id());
+        if self.is_user_registered(&account_id) {
+            log!("The account is already registered, refunding the deposit");
+            if storage_deposit > 0 {
+                Promise::new(env::predecessor_account_id()).transfer(storage_deposit);
+            }
+        } else {
+            assert!(
+                storage_deposit >= STORAGE_COST_PER_USER,
+                "The attached deposit is less than the minimum storage balance ({})",
+                STORAGE_COST_PER_USER
+            );
+            self.register_player(&account_id);
+
+            let refund = storage_deposit - STORAGE_COST_PER_USER;
+            if refund > 0 {
+                Promise::new(env::predecessor_account_id()).transfer(refund);
+            }
+        }
+        self.storage_balance()
+    }
+    pub fn storage_balance(&self) -> StorageBalance {
+        StorageBalance {
+            total: STORAGE_COST_PER_USER.into(),
+            available: U128::from(0),
+        }
+    }
+    /// Method not supported. Unregister the account using 'unregister_account()' method. It unregisters the account and withdraws deposited NEAR.
+    #[allow(unused_variables)]
+    pub fn storage_withdraw(&mut self, amount: Option<U128>) -> StorageBalance {
+        panic!("Storage withdraw not possible, unregister the account instead");
+    }
+    pub fn unregister_account(&mut self) -> StorageBalance {
+        let account_id = env::predecessor_account_id();
+        if !self.is_user_registered(&account_id) {
+            log!("The account is not registered, cannot close an unregistered account");
+        } else {
+            let refund = self.registered_players.remove(&account_id).unwrap().storage_deposit;
+            if refund > 0 {
+                Promise::new(env::predecessor_account_id()).transfer(refund);
+            }
+        }
+        self.storage_balance()
+    }
     pub fn start_game(&mut self, player_2_id: AccountId) -> GameId {
         if let Some(player_2_config) = self.available_players.get(&player_2_id) {
             // Check is game initiator (predecessor) player available to play as well
@@ -181,7 +281,6 @@ impl Contract {
 
             // Get predecessor's available deposit
             let player_1_config = self.internal_get_available_player(&player_1_id);
-            let player_1_config_token = player_1_config.token_id;
             let player_1_deposit = player_1_config.deposit;
 
             self.internal_check_player_available(&player_1_id);
@@ -201,9 +300,6 @@ impl Contract {
             );
 
             let game_id = self.next_game_id;
-            let token_id = player_2_config.token_id;
-
-            assert_eq!(token_id, player_1_config_token, "Mismatch deposit token! Both players have to deposit the same token to play the game");
             // deposit * 2
             let balance = match player_2_config.deposit.checked_mul(2) {
                 Some(value) => value,
@@ -211,10 +307,9 @@ impl Contract {
             };
 
             let reward = GameDeposit {
-                token_id: token_id.clone(),
                 balance: balance.into()
             };
-            log!("game reward:{} in token {:?} ", balance, token_id.clone());
+            log!("game reward:{} in token {:?} ", balance, self.cheddar);
             
             let seed = near_sdk::env::random_seed();
             let (first_player, second_player) = match seed[0] % 2 {
@@ -236,8 +331,8 @@ impl Contract {
                 self.internal_add_referrer(&player_2_id, &referrer_id);
             }
 
-            self.internal_update_stats(Some(&token_id), &player_1_id, UpdateStatsAction::AddPlayedGame, None, None);
-            self.internal_update_stats(Some(&token_id), &player_2_id, UpdateStatsAction::AddPlayedGame, None, None);
+            self.internal_update_stats(&player_1_id, UpdateStatsAction::AddPlayedGame, None, None);
+            self.internal_update_stats(&player_2_id, UpdateStatsAction::AddPlayedGame, None, None);
             game_id
         } else {
             panic!("Your opponent is not ready");
@@ -314,7 +409,6 @@ impl Contract {
                         player1,
                         player2,
                         reward_or_tie_refund: GameDeposit {
-                            token_id: game.reward().token_id,
                             balance
                         },
                         tiles: game.to_tiles(),
@@ -444,7 +538,6 @@ impl Contract {
             player1: winner.clone(),
             player2: looser.clone(),
             reward_or_tie_refund: GameDeposit {
-                token_id: game.reward().token_id,
                 balance
             },
             tiles: game.to_tiles(),
@@ -472,6 +565,9 @@ mod tests {
     const MIN_GAME_DURATION: u32 = 25 * 60;
     const ONE_CHEDDAR:Balance = ONE_NEAR;
     const MIN_FEES: u32 = 0;
+    pub(crate) const AVAILABLE_FOR_DEFAULT: Duration = 2 * 60; // 2 minutes in seconds
+    pub(crate) const MAX_TIME_TO_BE_AVAILABLE: u64 = 24 * 60 * 60; // 1 day in seconds
+
 
     fn user() -> AccountId {
         "user".parse().unwrap()
@@ -484,9 +580,6 @@ mod tests {
     }
     fn acc_cheddar() -> AccountId {
         "cheddar".parse().unwrap()
-    }
-    fn near() -> AccountId {
-        "near".parse().unwrap()
     }
 
     fn setup_contract(
@@ -520,7 +613,7 @@ mod tests {
         (context, contract)
     }
 
-    fn make_available_near(
+    fn make_available(
         ctx: &mut VMContextBuilder,
         ctr: &mut Contract,
         user: &AccountId,
@@ -536,11 +629,29 @@ mod tests {
             .build());
         ctr.make_available(Some(GameConfigNear { 
             opponent_id, 
-            referrer_id 
-        }), available_for);
+            referrer_id,
+        }), amount, available_for);
+    }
+    fn storage_deposit(
+        ctx: &mut VMContextBuilder,
+        ctr: &mut Contract,
+        user: &AccountId,
+        amount: Balance
+
+    ) -> StorageBalance {
+        testing_env!(ctx.attached_deposit(amount).predecessor_account_id(user.clone()).signer_account_id(user.clone()).build());
+        return ctr.storage_deposit(None, None);
+    }
+    fn unregister_account(
+        ctx: &mut VMContextBuilder,
+        ctr: &mut Contract,
+        user: &AccountId
+    ) -> StorageBalance {
+        testing_env!(ctx.predecessor_account_id(user.clone()).signer_account_id(user.clone()).build());
+        return ctr.unregister_account();
     }
 
-    fn make_available_ft(
+    fn make_deposit(
         ctx: &mut VMContextBuilder,
         ctr: &mut Contract,
         user: &AccountId,
@@ -652,23 +763,20 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
-                token_id: acc_cheddar(), 
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()),
+                referrer_id: None,
                 created_at: 0
             }),
-            (opponent(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (opponent(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
                 referrer_id: None,
@@ -679,8 +787,12 @@ mod tests {
         let user2 = "user2".parse().unwrap();
         let opponent2 = "opponent2".parse().unwrap();
 
-        make_available_near(&mut ctx, &mut ctr, &user2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent2, ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        storage_deposit(&mut ctx, &mut ctr, &user2, ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent2, ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user2, ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent2, ONE_CHEDDAR, msg1);
+        make_available(&mut ctx, &mut ctr, &user2, ONE_CHEDDAR, Some(opponent2.clone()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent2, ONE_CHEDDAR, Some(user2.clone()), None, MAX_AVAILABLE_FOR);
 
         let game_id_cheddar = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         let game_id_near = start_game(&mut ctx, &mut ctr, &user2, &opponent2);
@@ -743,37 +855,24 @@ mod tests {
     }
 
     #[test]
-    fn test_near_deposit() {
+    fn register_unregister_player() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
-        assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
-    }
-
-    #[test]
-    fn make_available_unavailable_near() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
-        assert!(ctr.get_available_players().is_empty());
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, Some(referrer()), AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, Some(user()), None, AVAILABLE_FOR_DEFAULT);
-        assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
-            (user(), GameConfigView { 
-                token_id: near(), 
-                deposit: U128(ONE_NEAR), 
-                opponent_id: None, 
-                referrer_id: Some(referrer()),
-                created_at: 0
+        assert!(ctr.get_registered_players().is_empty());
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        assert_eq!(ctr.get_registered_players(), Vec::<(AccountId, Vault)>::from([
+            (user(), Vault { 
+                total_rewards: 0 as u128, 
+                storage_deposit: STORAGE_COST_PER_USER, 
             }),
-            (opponent(), GameConfigView { 
-                token_id: near(), 
-                deposit: U128(ONE_NEAR), 
-                opponent_id: Some(user()), 
-                referrer_id: None,
-                created_at: 0
+            (opponent(), Vault { 
+                total_rewards: 0 as u128, 
+                storage_deposit: STORAGE_COST_PER_USER, 
             }),
         ]));
-        make_unavailable(&mut ctx, &mut ctr, &user());
-        make_unavailable(&mut ctx, &mut ctr, &opponent());
+        (&mut ctx, &mut ctr, &user());
+        unregister_account(&mut ctx, &mut ctr, &user());
+        unregister_account(&mut ctx, &mut ctr, &opponent());
         assert!(ctr.get_available_players().is_empty());
     }
     #[test]
@@ -785,23 +884,20 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
-            (user(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (user(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()),
+                referrer_id: None,
                 created_at: 0
             }),
-            (opponent(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (opponent(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
                 referrer_id: None,
@@ -813,21 +909,6 @@ mod tests {
         assert!(ctr.get_available_players().is_empty());
     }
     #[test]
-    #[should_panic(expected="Mismatch deposit token! Both players have to deposit the same token to play the game")]
-    fn start_game_diff_tokens() {
-        let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
-        assert!(ctr.get_available_players().is_empty());
-        let gc1 = GameConfigArgs { 
-            opponent_id: Some(opponent()), 
-            referrer_id: Some(referrer()) 
-        };
-        let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
-        start_game(&mut ctx, &mut ctr, &user(), &opponent());
-    }
-    #[test]
     fn test_give_up() {
         let (mut ctx, mut ctr) = setup_contract(user(), Some(MIN_FEES), None,  Some(MIN_GAME_DURATION));
         assert!(ctr.get_available_players().is_empty());
@@ -836,23 +917,20 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         assert_eq!(ctr.get_available_players(), Vec::<(AccountId, GameConfigView)>::from([
             (user(), GameConfigView { 
-                token_id: acc_cheddar(), 
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(opponent()), 
-                referrer_id: Some(referrer()),
+                referrer_id: None,
                 created_at: 0 
             }),
-            (opponent(), GameConfigView { 
-                token_id: acc_cheddar(), 
+            (opponent(), GameConfigView {  
                 deposit: U128(ONE_CHEDDAR), 
                 opponent_id: Some(user()), 
                 referrer_id: None,
@@ -888,13 +966,12 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -928,7 +1005,7 @@ mod tests {
         assert_eq!(winner ,Some(GameResult::Win(player_2)));
 
         let player_1_stats = ctr.get_stats(&user());
-        let player_2_stats = ctr.get_stats(&&opponent());
+        let player_2_stats = ctr.get_stats(&opponent());
         println!("{:#?}", player_1_stats);
         println!("{:#?}", player_2_stats);
         assert!(
@@ -951,13 +1028,12 @@ mod tests {
             referrer_id: Some(referrer()) 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1005,13 +1081,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1076,13 +1151,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1121,13 +1195,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1312,12 +1385,18 @@ mod tests {
         println!("TotalStatsNum: {:#?}", ctr.get_total_stats_num());
         println!("AccountsPlayed: {:#?}", ctr.get_accounts_played());
         println!("UserPenalties: {:#?}", ctr.get_user_penalties(&user()));
-
         println!("PenaltyUsers: {:#?}", ctr.get_penalty_users());
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        let msg = String::from("test");
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &&"third".parse().unwrap(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         assert_eq!(ctr.get_available_players().len(), 3);
         testing_env!(ctx
@@ -1332,15 +1411,17 @@ mod tests {
             .build()
         );
         print!("here\\");
-        make_available_near(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        storage_deposit(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_CHEDDAR, msg.clone());
+        make_available(&mut ctx, &mut ctr, &"fourth".parse().unwrap(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         assert_eq!(ctr.get_available_players().len(), 1);
         assert_eq!(ctr.get_available_players()[0].0, "fourth".parse().unwrap());
 
 
-        make_available_near(&mut ctx, &mut ctr, &user(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &opponent(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
-        make_available_near(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_NEAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
+        make_available(&mut ctx, &mut ctr, &"third".parse().unwrap(), ONE_CHEDDAR, None, None, AVAILABLE_FOR_DEFAULT);
 
         // first game starts at (max_game_duration + MAX_TIME_TO_BE_AVAILABLE +2) timestamp
         let first_game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
@@ -1423,13 +1504,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1469,13 +1549,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
@@ -1506,7 +1585,7 @@ mod tests {
     }
     #[test] 
     fn test_player_piece_binding() {
-        let game = Game::create_game(1, user(), opponent(), GameDeposit { token_id: acc_cheddar(), balance: U128(5000) });
+        let game = Game::create_game(1, user(), opponent(), GameDeposit {balance: U128(5000) });
         assert_eq!(game.current_piece, Piece::O);
     }
     #[test]
@@ -1518,13 +1597,12 @@ mod tests {
             referrer_id: None 
         };
         let msg1 = near_sdk::serde_json::to_string(&gc1).expect("err serialize");
-        let gc2 = GameConfigArgs { 
-            opponent_id: Some(user()), 
-            referrer_id: None 
-        };
-        let msg2 = near_sdk::serde_json::to_string(&gc2).expect("err serialize");
-        make_available_ft(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1);
-        make_available_ft(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg2);
+        storage_deposit(&mut ctx, &mut ctr, &user(), ONE_NEAR);
+        storage_deposit(&mut ctx, &mut ctr, &opponent(), ONE_NEAR);
+        make_deposit(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, msg1.clone());
+        make_deposit(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, msg1.clone());
+        make_available(&mut ctx, &mut ctr, &user(), ONE_CHEDDAR, Some(opponent()), None, MAX_AVAILABLE_FOR);
+        make_available(&mut ctx, &mut ctr, &opponent(), ONE_CHEDDAR, Some(user()), None, MAX_AVAILABLE_FOR);
         
         let game_id = start_game(&mut ctx, &mut ctr, &user(), &opponent());
         
