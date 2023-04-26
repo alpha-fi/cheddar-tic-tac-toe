@@ -8,7 +8,7 @@ pub struct GameConfig {
     pub(crate) opponent_id: Option<AccountId>,
     pub(crate) referrer_id: Option<AccountId>,
     pub(crate) created_at: Timestamp, // timestamp in seconds
-    pub(crate) available_to: Timestamp, 
+    pub(crate) available_until: Timestamp, 
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -50,7 +50,7 @@ impl GameConfig {
             opponent_id: None, 
             referrer_id: None,
             created_at: nano_to_sec(env::block_timestamp()).into(),
-            available_to: 0,
+            available_until: 0,
         }
     }
     /// `GameConfig` from transfer message
@@ -63,7 +63,7 @@ impl GameConfig {
             opponent_id: game_args.opponent_id.clone(), 
             referrer_id: game_args.referrer_id.clone(),
             created_at: nano_to_sec(env::block_timestamp()).into(),
-            available_to: 0,
+            available_until: 0,
         }
     }
 }

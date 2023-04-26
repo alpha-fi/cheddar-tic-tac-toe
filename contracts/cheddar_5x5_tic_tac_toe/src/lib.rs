@@ -143,7 +143,7 @@ impl Contract {
                 opponent_id,
                 referrer_id: referrer_id.clone(),
                 created_at: nano_to_sec(cur_timestamp),
-                available_to: nano_to_sec(cur_timestamp) + available_for,
+                available_until: nano_to_sec(cur_timestamp) + available_for,
             }
         );
         

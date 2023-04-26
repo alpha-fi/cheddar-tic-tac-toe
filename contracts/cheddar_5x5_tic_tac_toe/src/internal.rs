@@ -56,14 +56,12 @@ impl Contract {
         let expired_players: Vec<(AccountId, GameConfig)> = self
             .available_players
             .iter()
-            .filter(|(_, config)| current_timestamp > config.available_to)
+            .filter(|(_, config)| current_timestamp > config.available_until)
             .map(|(account_id, config)| (account_id.clone(), config))
             .collect();
-        if !expired_players.is_empty() {
-            for (account_id, _) in expired_players.iter() {
+        for (account_id, _) in expired_players.iter() {
                 self.add_cheddar_balance(account_id);
             }
-        }
         self.last_update_timestamp = nano_to_sec(ts);
     }
 
